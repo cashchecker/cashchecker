@@ -168,6 +168,29 @@ textarea.form-input{resize:none;min-height:70px}
 </head>
 <body>
 
+<!-- CUSTOM CATEGORY MODAL -->
+<div class="modal-overlay" id="custom-cat-modal">
+  <div class="modal" style="width:360px">
+    <div class="modal-title">
+      <span id="custom-cat-modal-title">New Category</span>
+      <button class="close-btn" onclick="closeCustomCatModal()">✕</button>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Category Name</label>
+      <input class="form-input" id="custom-cat-name-input" placeholder="e.g. Gym, Fuel, Dividend..." autofocus
+        onkeydown="if(event.key==='Enter')confirmCustomCat()">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Emoji (optional)</label>
+      <input class="form-input" id="custom-cat-emoji-input" placeholder="✨" style="font-size:20px;width:80px">
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:4px">
+      <button class="btn btn-ghost" onclick="closeCustomCatModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="confirmCustomCat()">Add Category</button>
+    </div>
+  </div>
+</div>
+
 <!-- Sidebar -->
 <nav class="sidebar">
   <div class="logo">
@@ -471,10 +494,9 @@ textarea.form-input{resize:none;min-height:70px}
         </select>
       </div>
     </div>
-    <!-- Custom category input (shown when "Add Custom" selected) -->
-    <div class="form-group" id="custom-cat-wrap" style="display:none">
-      <label class="form-label">Custom Category Name</label>
-      <input class="form-input" id="tx-custom-cat" placeholder="e.g. Bonus, Dividend...">
+    <!-- Hidden field to store chosen custom category -->
+    <div id="custom-cat-wrap" style="display:none">
+      <input type="hidden" id="tx-custom-cat" value="">
     </div>
     <div class="form-group">
       <label class="form-label">Description</label>
@@ -1031,23 +1053,65 @@ const EXPENSE_CATS=[
   {v:'Education',l:'📚 Education'},{v:'Rent',l:'🏠 Rent'}
 ];
 const INCOME_CATS=[
-  {v:'Salary',l:'💰 Salary'},{v:'Commission',l:'🤝 Commission'},{v:'Profit',l:'📈 Profit'},{v:'Business',l:'🏪 Business'}
+  {v:'Salary',l:'💰 Salary'},{v:'Commission',l:'🤝 Commission'},{v:'Profit',l:'📈 Profit'}
 ];
 
 function populateCatSelect(type){
   const sel=document.getElementById('tx-cat');
   const base=type==='income'?INCOME_CATS:EXPENSE_CATS;
-  const custom=(state.customCats||{})[type]||[];
+  const rawCustom=(state.customCats||{})[type]||[];
+  // Support both old string[] format and new {v,l}[] format
+  const custom=rawCustom.map(c=>typeof c==='string'?{v:c,l:'✨ '+c}:c);
   sel.innerHTML='';
-  [...base,...custom.map(c=>({v:c,l:'✨ '+c}))].forEach(o=>{
+  [...base,...custom].forEach(o=>{
     const opt=document.createElement('option');opt.value=o.v;opt.textContent=o.l;sel.appendChild(opt);
   });
-  const addOpt=document.createElement('option');addOpt.value='__custom__';addOpt.textContent='+ Add custom category...';sel.appendChild(addOpt);
 }
 
 function handleCatChange(){
   const val=document.getElementById('tx-cat').value;
-  document.getElementById('custom-cat-wrap').style.display=val==='__custom__'?'block':'none';
+  if(val==='__custom__'){
+    // Open the custom category modal
+    const type=document.getElementById('tx-type').value;
+    document.getElementById('custom-cat-modal-title').textContent=type==='income'?'New Income Category':'New Expense Category';
+    document.getElementById('custom-cat-name-input').value='';
+    document.getElementById('custom-cat-emoji-input').value='';
+    document.getElementById('custom-cat-modal').classList.add('open');
+    setTimeout(()=>document.getElementById('custom-cat-name-input').focus(),100);
+    // Reset select back to first option temporarily
+    const sel=document.getElementById('tx-cat');
+    sel.selectedIndex=0;
+  }
+}
+
+function closeCustomCatModal(){
+  document.getElementById('custom-cat-modal').classList.remove('open');
+}
+
+function confirmCustomCat(){
+  const name=(document.getElementById('custom-cat-name-input').value||'').trim();
+  if(!name){
+    document.getElementById('custom-cat-name-input').style.borderColor='var(--red)';
+    document.getElementById('custom-cat-name-input').focus();
+    return;
+  }
+  const emoji=(document.getElementById('custom-cat-emoji-input').value||'').trim()||'✨';
+  const type=document.getElementById('tx-type').value;
+  // Save custom category
+  if(!state.customCats)state.customCats={};
+  if(!state.customCats[type])state.customCats[type]=[];
+  if(!state.customCats[type].find(c=>c.v===name)){
+    state.customCats[type].push({v:name,l:emoji+' '+name});
+    saveState();
+  }
+  // Re-populate the select and pick the new category
+  populateCatSelect(type);
+  const sel=document.getElementById('tx-cat');
+  for(let i=0;i<sel.options.length;i++){
+    if(sel.options[i].value===name){sel.selectedIndex=i;break;}
+  }
+  document.getElementById('custom-cat-wrap').style.display='none';
+  closeCustomCatModal();
 }
 
 // ===== PHOTO HELPERS =====
@@ -1109,15 +1173,8 @@ function saveTransaction(){
   const amt=parseFloat(document.getElementById('tx-amount').value);
   if(!amt||amt<=0){alert('Valid amount enter ചെയ്യൂ');return;}
   const type=document.getElementById('tx-type').value;
-  let cat=document.getElementById('tx-cat').value;
-  if(cat==='__custom__'){
-    cat=(document.getElementById('tx-custom-cat').value||'').trim();
-    if(!cat){alert('Custom category name type ചെയ്യൂ');return;}
-    // Save custom category for future use
-    if(!state.customCats)state.customCats={};
-    if(!state.customCats[type])state.customCats[type]=[];
-    if(!state.customCats[type].includes(cat))state.customCats[type].push(cat);
-  }
+  const cat=document.getElementById('tx-cat').value;
+  if(!cat||cat==='__custom__'){alert('Category select ചെയ്യൂ');return;}
   state.transactions.push({
     id:nextId(state.transactions),
     type,amount:amt,category:cat,
@@ -1130,7 +1187,6 @@ function saveTransaction(){
   saveState();closeModal('add-modal');
   document.getElementById('tx-amount').value='';
   document.getElementById('tx-desc').value='';
-  document.getElementById('tx-custom-cat').value='';
   clearPhoto();
   renderDashboard();
 }
