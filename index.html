@@ -1052,22 +1052,27 @@ function removeThinking(){const el=document.getElementById('ai-thinking');if(el)
 const EXPENSE_CATS=[
   {v:'Food',l:'🍔 Food'},{v:'Transport',l:'🚗 Transport'},{v:'Shopping',l:'🛍 Shopping'},
   {v:'Bills',l:'⚡ Bills'},{v:'Entertainment',l:'🎬 Entertainment'},{v:'Health',l:'💊 Health'},
-  {v:'Education',l:'📚 Education'},{v:'Rent',l:'🏠 Rent'},{v:'__custom__',l:'✏️ Other / Custom...'}
+  {v:'Education',l:'📚 Education'},{v:'Rent',l:'🏠 Rent'}
 ];
 const INCOME_CATS=[
-  {v:'Salary',l:'💰 Salary'},{v:'Commission',l:'🤝 Commission'},{v:'Profit',l:'📈 Profit'},{v:'__custom__',l:'✏️ Other / Custom...'}
+  {v:'Salary',l:'💰 Salary'},{v:'Commission',l:'🤝 Commission'},{v:'Profit',l:'📈 Profit'}
 ];
 
 function populateCatSelect(type){
   const sel=document.getElementById('tx-cat');
-  const base=type==='income'?INCOME_CATS:EXPENSE_CATS;
+  // Base cats without the __custom__ entry (we'll re-add at end)
+  const allBase=type==='income'?INCOME_CATS:EXPENSE_CATS;
+  const base=allBase.filter(o=>o.v!=='__custom__');
   const rawCustom=(state.customCats||{})[type]||[];
   // Support both old string[] format and new {v,l}[] format
-  const custom=rawCustom.map(c=>typeof c==='string'?{v:c,l:'✨ '+c}:c);
+  const custom=rawCustom.map(c=>typeof c==='string'?{v:c,l:'✏️ '+c}:c);
   sel.innerHTML='';
+  // Fixed categories first, then saved custom ones, then "Other/Custom" last
   [...base,...custom].forEach(o=>{
     const opt=document.createElement('option');opt.value=o.v;opt.textContent=o.l;sel.appendChild(opt);
   });
+  // Always add Other/Custom at the end
+  const addOpt=document.createElement('option');addOpt.value='__custom__';addOpt.textContent='✏️ Other / Custom...';sel.appendChild(addOpt);
 }
 
 function handleCatChange(){
@@ -1176,6 +1181,12 @@ function saveTransaction(){
     const customName=(document.getElementById('tx-custom-cat').value||'').trim();
     if(!customName){alert('Custom category name type ചെയ്യൂ');document.getElementById('tx-custom-cat').focus();return;}
     cat=customName;
+    // Save to persistent custom category list
+    if(!state.customCats)state.customCats={};
+    if(!state.customCats[type])state.customCats[type]=[];
+    if(!state.customCats[type].find(c=>(typeof c==='string'?c:c.v)===cat)){
+      state.customCats[type].push({v:cat,l:'✏️ '+cat});
+    }
   }
   if(!cat){alert('Category select ചെയ്യൂ');return;}
   state.transactions.push({
@@ -1190,6 +1201,8 @@ function saveTransaction(){
   saveState();closeModal('add-modal');
   document.getElementById('tx-amount').value='';
   document.getElementById('tx-desc').value='';
+  document.getElementById('tx-custom-cat').value='';
+  document.getElementById('custom-cat-wrap').style.display='none';
   clearPhoto();
   renderDashboard();
 }
