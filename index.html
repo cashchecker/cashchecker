@@ -460,18 +460,8 @@ textarea.form-input{resize:none;min-height:70px}
     <div class="form-row">
       <div class="form-group" style="margin:0">
         <label class="form-label">Category</label>
-        <select class="form-input" id="tx-cat">
-          <option value="Food">🍔 Food</option>
-          <option value="Transport">🚗 Transport</option>
-          <option value="Shopping">🛍 Shopping</option>
-          <option value="Bills">⚡ Bills</option>
-          <option value="Entertainment">🎬 Entertainment</option>
-          <option value="Health">💊 Health</option>
-          <option value="Education">📚 Education</option>
-          <option value="Rent">🏠 Rent</option>
-          <option value="Salary">💰 Salary</option>
-          <option value="Freelance">💻 Freelance</option>
-          <option value="Other">📦 Other</option>
+        <select class="form-input" id="tx-cat" onchange="handleCatChange()">
+          <!-- options populated by JS based on type -->
         </select>
       </div>
       <div class="form-group" style="margin:0">
@@ -481,9 +471,28 @@ textarea.form-input{resize:none;min-height:70px}
         </select>
       </div>
     </div>
+    <!-- Custom category input (shown when "Add Custom" selected) -->
+    <div class="form-group" id="custom-cat-wrap" style="display:none">
+      <label class="form-label">Custom Category Name</label>
+      <input class="form-input" id="tx-custom-cat" placeholder="e.g. Bonus, Dividend...">
+    </div>
     <div class="form-group">
       <label class="form-label">Description</label>
       <input class="form-input" id="tx-desc" placeholder="What was this for?">
+    </div>
+    <!-- Screenshot / Bill photo -->
+    <div class="form-group">
+      <label class="form-label">Receipt / Screenshot (optional)</label>
+      <div id="photo-drop-zone" style="border:1px dashed var(--border2);border-radius:var(--radius-sm);padding:14px;text-align:center;cursor:pointer;transition:border 0.15s;position:relative" onclick="document.getElementById('tx-photo-input').click()" ondragover="event.preventDefault();this.style.borderColor='var(--green)'" ondragleave="this.style.borderColor='var(--border2)'" ondrop="handlePhotoDrop(event)">
+        <input type="file" id="tx-photo-input" accept="image/*" capture="environment" style="display:none" onchange="handlePhotoSelect(this)">
+        <div id="photo-placeholder" style="color:var(--text3);font-size:13px">
+          📷 Click to take photo or upload bill<br><span style="font-size:11px">Camera / Gallery / Screenshot — any image</span>
+        </div>
+        <div id="photo-preview-wrap" style="display:none">
+          <img id="photo-preview" style="max-width:100%;max-height:160px;border-radius:6px;object-fit:contain">
+          <button onclick="event.stopPropagation();clearPhoto()" style="position:absolute;top:6px;right:6px;background:var(--red);color:#fff;border:none;border-radius:50%;width:22px;height:22px;cursor:pointer;font-size:12px;line-height:22px">✕</button>
+        </div>
+      </div>
     </div>
     <div class="form-group">
       <label class="form-label" style="display:flex;align-items:center;gap:8px;cursor:pointer">
@@ -664,8 +673,8 @@ function fmt(n){return '₹'+Math.abs(n).toLocaleString('en-IN');}
 function fmtSigned(n){return (n>=0?'+':'-')+'₹'+Math.abs(n).toLocaleString('en-IN');}
 function nextId(arr){return arr.length?Math.max(...arr.map(x=>x.id))+1:1;}
 
-const catIcons = {Food:'🍔',Transport:'🚗',Shopping:'🛍',Bills:'⚡',Entertainment:'🎬',Health:'💊',Education:'📚',Rent:'🏠',Salary:'💰',Freelance:'💻',Other:'📦'};
-const catColors = {Food:'var(--amber)',Transport:'var(--blue)',Shopping:'var(--purple)',Bills:'var(--red)',Entertainment:'var(--teal)',Health:'var(--green)',Education:'var(--blue)',Rent:'var(--amber)',Salary:'var(--green)',Freelance:'var(--teal)',Other:'var(--text2)'};
+const catIcons = {Food:'🍔',Transport:'🚗',Shopping:'🛍',Bills:'⚡',Entertainment:'🎬',Health:'💊',Education:'📚',Rent:'🏠',Salary:'💰',Freelance:'💻',Commission:'🤝',Profit:'📈',Business:'🏪',Other:'📦'};
+const catColors = {Food:'var(--amber)',Transport:'var(--blue)',Shopping:'var(--purple)',Bills:'var(--red)',Entertainment:'var(--teal)',Health:'var(--green)',Education:'var(--blue)',Rent:'var(--amber)',Salary:'var(--green)',Freelance:'var(--teal)',Commission:'var(--teal)',Profit:'var(--green)',Business:'var(--purple)',Other:'var(--text2)'};
 
 // ===== NAVIGATION =====
 function showPage(name){
@@ -730,17 +739,33 @@ function renderBarChart(){
   barChart=new Chart(ctx,{type:'bar',data:{labels:last6.map(x=>x.label),datasets:[{label:'Income',data:income,backgroundColor:'rgba(34,197,94,0.7)',borderRadius:4},{label:'Expense',data:expense,backgroundColor:'rgba(239,68,68,0.6)',borderRadius:4}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:'#8b8f99',font:{size:11}}}},scales:{x:{ticks:{color:'#555a66'},grid:{display:false}},y:{ticks:{color:'#555a66',callback:v=>'₹'+v.toLocaleString('en-IN')},grid:{color:'rgba(255,255,255,0.04)'}}}}});
 }
 
-function txHTML(t){
-  const icon=catIcons[t.category]||'📦';
+function txHTML(t, showDelete=false){
+  const icon=catIcons[t.category]||'✨';
   const isExp=t.type==='expense';
-  return `<div class="tx-item">
-    <div class="tx-icon" style="background:${isExp?'var(--red-bg)':'var(--green-bg)'}">${icon}</div>
-    <div class="tx-info">
-      <div class="tx-name">${t.desc||t.category} ${t.recurring?'<span class="rec-dot" title="Recurring"></span>':''}</div>
-      <div class="tx-meta">${t.category} · ${t.mode} · ${new Date(t.date).toLocaleDateString('en-IN',{day:'numeric',month:'short'})}</div>
+  const dateStr=new Date(t.date).toLocaleDateString('en-IN',{day:'numeric',month:'short',year:showDelete?'numeric':undefined});
+  return `<div class="tx-item" style="flex-wrap:wrap;gap:10px;cursor:default">
+    <div style="display:flex;align-items:center;gap:12px;flex:1;min-width:0">
+      <div class="tx-icon" style="background:${isExp?'var(--red-bg)':'var(--green-bg)'};flex-shrink:0">${icon}</div>
+      <div class="tx-info" style="min-width:0">
+        <div class="tx-name">${t.desc||t.category} ${t.recurring?'<span class="rec-dot" title="Recurring"></span>':''}</div>
+        <div class="tx-meta">${t.category} · ${t.mode} · ${dateStr}</div>
+      </div>
     </div>
-    <div class="tx-amount ${isExp?'tx-expense':'tx-income'}">${isExp?'-':'+'}${fmt(t.amount)}</div>
+    <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
+      ${t.photo?`<img src="${t.photo}" onclick="viewPhoto('${t.id}')" style="width:36px;height:36px;border-radius:6px;object-fit:cover;cursor:pointer;border:1px solid var(--border2)" title="View receipt">` : ''}
+      <div class="tx-amount ${isExp?'tx-expense':'tx-income'}">${isExp?'-':'+'}${fmt(t.amount)}</div>
+      ${showDelete?`<button class="btn btn-ghost btn-sm" style="color:var(--red);padding:4px 8px" onclick="deleteTx(${t.id})">✕</button>`:''}
+    </div>
   </div>`;
+}
+
+function viewPhoto(txId){
+  const t=state.transactions.find(x=>x.id==txId);if(!t||!t.photo)return;
+  const overlay=document.createElement('div');
+  overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,0.85);display:flex;align-items:center;justify-content:center;z-index:999;cursor:pointer';
+  overlay.innerHTML=`<img src="${t.photo}" style="max-width:90vw;max-height:90vh;border-radius:12px;object-fit:contain">`;
+  overlay.onclick=()=>overlay.remove();
+  document.body.appendChild(overlay);
 }
 
 // ===== TRANSACTIONS =====
@@ -748,23 +773,17 @@ function renderTransactions(){
   const q=(document.getElementById('search-input')?.value||'').toLowerCase();
   const fc=document.getElementById('filter-cat')?.value||'';
   const ft=document.getElementById('filter-type')?.value||'';
-  // Populate category filter
+  // Repopulate category filter from current transactions
   const cats=[...new Set(state.transactions.map(t=>t.category))];
   const sel=document.getElementById('filter-cat');
-  if(sel.options.length<=1){cats.forEach(c=>{const o=document.createElement('option');o.value=c;o.textContent=c;sel.appendChild(o);});}
+  sel.innerHTML='<option value="">All categories</option>';
+  cats.forEach(c=>{const o=document.createElement('option');o.value=c;o.textContent=c;sel.appendChild(o);});
+  if(fc)sel.value=fc;
   const filtered=state.transactions.slice().sort((a,b)=>new Date(b.date)-new Date(a.date))
     .filter(t=>(!q||(t.desc||'').toLowerCase().includes(q)||t.category.toLowerCase().includes(q))&&(!fc||t.category===fc)&&(!ft||t.type===ft));
-  document.getElementById('all-tx').innerHTML=filtered.length?filtered.map(t=>`<div class="tx-item" onclick="deleteTx(${t.id})" title="Click to delete">${txHTML(t).slice(txHTML(t).indexOf('>')+1,-6)}</div>`).join(''):'<div style="padding:24px;text-align:center;color:var(--text3)">No transactions found</div>';
-  document.getElementById('all-tx').innerHTML=filtered.map(t=>`
-    <div class="tx-item" style="cursor:default">
-      ${txHTML(t).match(/<div class="tx-icon"[\s\S]*?<\/div>/)[0]}
-      <div class="tx-info">
-        <div class="tx-name">${t.desc||t.category} ${t.recurring?'<span class="rec-dot"></span>':''}</div>
-        <div class="tx-meta">${t.category} · ${t.mode} · ${new Date(t.date).toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'})}</div>
-      </div>
-      <div class="tx-amount ${t.type==='expense'?'tx-expense':'tx-income'}">${t.type==='expense'?'-':'+'}${fmt(t.amount)}</div>
-      <button class="btn btn-ghost btn-sm" style="margin-left:8px;color:var(--red)" onclick="deleteTx(${t.id})">✕</button>
-    </div>`).join('') || '<div style="padding:24px;text-align:center;color:var(--text3)">No transactions found</div>';
+  document.getElementById('all-tx').innerHTML=filtered.length
+    ? filtered.map(t=>txHTML(t,true)).join('')
+    : '<div style="padding:24px;text-align:center;color:var(--text3)">No transactions found</div>';
 }
 function deleteTx(id){state.transactions=state.transactions.filter(t=>t.id!==id);saveState();renderTransactions();}
 
@@ -1005,9 +1024,65 @@ function addAIMsg(text,role,id){
 }
 function removeThinking(){const el=document.getElementById('ai-thinking');if(el)el.remove();}
 
+// ===== CATEGORY LISTS =====
+const EXPENSE_CATS=[
+  {v:'Food',l:'🍔 Food'},{v:'Transport',l:'🚗 Transport'},{v:'Shopping',l:'🛍 Shopping'},
+  {v:'Bills',l:'⚡ Bills'},{v:'Entertainment',l:'🎬 Entertainment'},{v:'Health',l:'💊 Health'},
+  {v:'Education',l:'📚 Education'},{v:'Rent',l:'🏠 Rent'}
+];
+const INCOME_CATS=[
+  {v:'Salary',l:'💰 Salary'},{v:'Commission',l:'🤝 Commission'},{v:'Profit',l:'📈 Profit'},{v:'Business',l:'🏪 Business'}
+];
+
+function populateCatSelect(type){
+  const sel=document.getElementById('tx-cat');
+  const base=type==='income'?INCOME_CATS:EXPENSE_CATS;
+  const custom=(state.customCats||{})[type]||[];
+  sel.innerHTML='';
+  [...base,...custom.map(c=>({v:c,l:'✨ '+c}))].forEach(o=>{
+    const opt=document.createElement('option');opt.value=o.v;opt.textContent=o.l;sel.appendChild(opt);
+  });
+  const addOpt=document.createElement('option');addOpt.value='__custom__';addOpt.textContent='+ Add custom category...';sel.appendChild(addOpt);
+}
+
+function handleCatChange(){
+  const val=document.getElementById('tx-cat').value;
+  document.getElementById('custom-cat-wrap').style.display=val==='__custom__'?'block':'none';
+}
+
+// ===== PHOTO HELPERS =====
+let currentPhotoBase64=null;
+function handlePhotoSelect(input){
+  const file=input.files[0];if(!file)return;
+  const reader=new FileReader();
+  reader.onload=e=>{
+    currentPhotoBase64=e.target.result;
+    document.getElementById('photo-preview').src=currentPhotoBase64;
+    document.getElementById('photo-placeholder').style.display='none';
+    document.getElementById('photo-preview-wrap').style.display='block';
+  };
+  reader.readAsDataURL(file);
+}
+function handlePhotoDrop(e){
+  e.preventDefault();
+  document.getElementById('photo-drop-zone').style.borderColor='var(--border2)';
+  const file=e.dataTransfer.files[0];if(!file||!file.type.startsWith('image/'))return;
+  const inp=document.getElementById('tx-photo-input');
+  const dt=new DataTransfer();dt.items.add(file);inp.files=dt.files;
+  handlePhotoSelect(inp);
+}
+function clearPhoto(){
+  currentPhotoBase64=null;
+  document.getElementById('tx-photo-input').value='';
+  document.getElementById('photo-preview-wrap').style.display='none';
+  document.getElementById('photo-placeholder').style.display='block';
+}
+
 // ===== MODALS =====
 function openAddModal(){
   document.getElementById('tx-date').value=new Date().toISOString().split('T')[0];
+  setType('expense');
+  clearPhoto();
   document.getElementById('add-modal').classList.add('open');
 }
 function openBudgetModal(){document.getElementById('budget-modal').classList.add('open');}
@@ -1021,6 +1096,8 @@ function setType(t){
   document.getElementById('tx-type').value=t;
   document.getElementById('btn-exp').className='type-btn'+(t==='expense'?' active-exp':'');
   document.getElementById('btn-inc').className='type-btn'+(t==='income'?' active-inc':'');
+  populateCatSelect(t);
+  document.getElementById('custom-cat-wrap').style.display='none';
 }
 function setDebtType(t){
   document.getElementById('debt-direction').value=t;
@@ -1031,18 +1108,30 @@ function setDebtType(t){
 function saveTransaction(){
   const amt=parseFloat(document.getElementById('tx-amount').value);
   if(!amt||amt<=0){alert('Valid amount enter ചെയ്യൂ');return;}
+  const type=document.getElementById('tx-type').value;
+  let cat=document.getElementById('tx-cat').value;
+  if(cat==='__custom__'){
+    cat=(document.getElementById('tx-custom-cat').value||'').trim();
+    if(!cat){alert('Custom category name type ചെയ്യൂ');return;}
+    // Save custom category for future use
+    if(!state.customCats)state.customCats={};
+    if(!state.customCats[type])state.customCats[type]=[];
+    if(!state.customCats[type].includes(cat))state.customCats[type].push(cat);
+  }
   state.transactions.push({
     id:nextId(state.transactions),
-    type:document.getElementById('tx-type').value,
-    amount:amt,
-    category:document.getElementById('tx-cat').value,
+    type,amount:amt,category:cat,
     desc:document.getElementById('tx-desc').value,
     date:document.getElementById('tx-date').value,
     mode:document.getElementById('tx-mode').value,
-    recurring:document.getElementById('tx-recurring').checked
+    recurring:document.getElementById('tx-recurring').checked,
+    photo:currentPhotoBase64||null
   });
   saveState();closeModal('add-modal');
-  document.getElementById('tx-amount').value='';document.getElementById('tx-desc').value='';
+  document.getElementById('tx-amount').value='';
+  document.getElementById('tx-desc').value='';
+  document.getElementById('tx-custom-cat').value='';
+  clearPhoto();
   renderDashboard();
 }
 
@@ -1102,6 +1191,8 @@ function exportCSV(){
 document.querySelectorAll('.modal-overlay').forEach(o=>o.addEventListener('click',e=>{if(e.target===o)o.classList.remove('open');}));
 
 // Init
+if(!state.customCats)state.customCats={};
+populateCatSelect('expense');
 renderDashboard();
 </script>
 </body>
