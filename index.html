@@ -494,9 +494,11 @@ textarea.form-input{resize:none;min-height:70px}
         </select>
       </div>
     </div>
-    <!-- Hidden field to store chosen custom category -->
-    <div id="custom-cat-wrap" style="display:none">
-      <input type="hidden" id="tx-custom-cat" value="">
+
+    <!-- Custom category name input -->
+    <div id="custom-cat-wrap" style="display:none;margin-bottom:12px">
+      <label class="form-label">Custom Category Name</label>
+      <input class="form-input" id="tx-custom-cat" placeholder="e.g. Gift, Bonus, Medical...">
     </div>
     <div class="form-group">
       <label class="form-label">Description</label>
@@ -1050,10 +1052,10 @@ function removeThinking(){const el=document.getElementById('ai-thinking');if(el)
 const EXPENSE_CATS=[
   {v:'Food',l:'🍔 Food'},{v:'Transport',l:'🚗 Transport'},{v:'Shopping',l:'🛍 Shopping'},
   {v:'Bills',l:'⚡ Bills'},{v:'Entertainment',l:'🎬 Entertainment'},{v:'Health',l:'💊 Health'},
-  {v:'Education',l:'📚 Education'},{v:'Rent',l:'🏠 Rent'}
+  {v:'Education',l:'📚 Education'},{v:'Rent',l:'🏠 Rent'},{v:'__custom__',l:'✏️ Other / Custom...'}
 ];
 const INCOME_CATS=[
-  {v:'Salary',l:'💰 Salary'},{v:'Commission',l:'🤝 Commission'},{v:'Profit',l:'📈 Profit'}
+  {v:'Salary',l:'💰 Salary'},{v:'Commission',l:'🤝 Commission'},{v:'Profit',l:'📈 Profit'},{v:'__custom__',l:'✏️ Other / Custom...'}
 ];
 
 function populateCatSelect(type){
@@ -1070,17 +1072,13 @@ function populateCatSelect(type){
 
 function handleCatChange(){
   const val=document.getElementById('tx-cat').value;
+  const wrap=document.getElementById('custom-cat-wrap');
   if(val==='__custom__'){
-    // Open the custom category modal
-    const type=document.getElementById('tx-type').value;
-    document.getElementById('custom-cat-modal-title').textContent=type==='income'?'New Income Category':'New Expense Category';
-    document.getElementById('custom-cat-name-input').value='';
-    document.getElementById('custom-cat-emoji-input').value='';
-    document.getElementById('custom-cat-modal').classList.add('open');
-    setTimeout(()=>document.getElementById('custom-cat-name-input').focus(),100);
-    // Reset select back to first option temporarily
-    const sel=document.getElementById('tx-cat');
-    sel.selectedIndex=0;
+    wrap.style.display='block';
+    setTimeout(()=>document.getElementById('tx-custom-cat').focus(),50);
+  } else {
+    wrap.style.display='none';
+    document.getElementById('tx-custom-cat').value='';
   }
 }
 
@@ -1173,8 +1171,13 @@ function saveTransaction(){
   const amt=parseFloat(document.getElementById('tx-amount').value);
   if(!amt||amt<=0){alert('Valid amount enter ചെയ്യൂ');return;}
   const type=document.getElementById('tx-type').value;
-  const cat=document.getElementById('tx-cat').value;
-  if(!cat||cat==='__custom__'){alert('Category select ചെയ്യൂ');return;}
+  let cat=document.getElementById('tx-cat').value;
+  if(cat==='__custom__'){
+    const customName=(document.getElementById('tx-custom-cat').value||'').trim();
+    if(!customName){alert('Custom category name type ചെയ്യൂ');document.getElementById('tx-custom-cat').focus();return;}
+    cat=customName;
+  }
+  if(!cat){alert('Category select ചെയ്യൂ');return;}
   state.transactions.push({
     id:nextId(state.transactions),
     type,amount:amt,category:cat,
