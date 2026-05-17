@@ -164,9 +164,190 @@ textarea.form-input{resize:none;min-height:70px}
 .divider{height:1px;background:var(--border);margin:20px 0}
 .section-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}
 .section-head h3{font-size:14px;font-weight:600}
+
+/* ===== NEW FEATURE STYLES ===== */
+
+/* Toast notification */
+.toast{position:fixed;bottom:24px;right:24px;background:var(--surface);border:1px solid var(--border2);border-radius:var(--radius-sm);padding:12px 18px;font-size:13px;color:var(--text);z-index:9999;display:flex;align-items:center;gap:10px;box-shadow:0 8px 24px rgba(0,0,0,0.4);transform:translateY(80px);opacity:0;transition:all 0.3s cubic-bezier(.34,1.56,.64,1)}
+.toast.show{transform:translateY(0);opacity:1}
+.toast-icon{font-size:16px}
+
+/* Edit modal */
+.edit-tag{display:inline-flex;align-items:center;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:500;cursor:pointer;border:none;background:var(--surface3);color:var(--text2)}
+.edit-tag:hover{background:var(--blue-bg);color:var(--blue)}
+
+/* Month selector */
+.month-nav{display:flex;align-items:center;gap:8px}
+.month-nav button{background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);padding:4px 10px;cursor:pointer;font-size:13px}
+.month-nav button:hover{background:var(--surface3)}
+.month-nav span{font-size:13px;font-weight:500;min-width:100px;text-align:center}
+
+/* PIN Lock */
+.pin-overlay{position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;z-index:9999;flex-direction:column;gap:24px}
+.pin-dots{display:flex;gap:12px;margin:8px 0}
+.pin-dot{width:14px;height:14px;border-radius:50%;background:var(--surface3);border:2px solid var(--border2);transition:all 0.2s}
+.pin-dot.filled{background:var(--green);border-color:var(--green)}
+.pin-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;width:200px}
+.pin-key{background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:16px;text-align:center;font-size:18px;font-weight:600;cursor:pointer;transition:all 0.1s;font-family:var(--mono)}
+.pin-key:hover{background:var(--surface3);transform:scale(1.05)}
+.pin-key:active{transform:scale(0.95)}
+
+/* Note tag in tx */
+.tx-note{font-size:11px;color:var(--blue);margin-top:2px;font-style:italic}
+
+/* Dark/Light toggle */
+.theme-btn{background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:6px 10px;color:var(--text2);cursor:pointer;font-size:14px;transition:all 0.15s}
+.theme-btn:hover{color:var(--text);background:var(--surface3)}
+
+/* Quick stats bar */
+.quick-stat{display:flex;flex-direction:column;align-items:center;padding:10px 16px;background:var(--surface2);border-radius:var(--radius-sm);flex:1}
+.quick-stat-val{font-size:15px;font-weight:600;font-family:var(--mono)}
+.quick-stat-label{font-size:10px;color:var(--text3);margin-top:2px;text-transform:uppercase;letter-spacing:0.05em}
+
+/* Category manager */
+.cat-pill{display:inline-flex;align-items:center;gap:6px;padding:5px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:20px;font-size:12px;margin:4px}
+.cat-pill-del{background:none;border:none;color:var(--text3);cursor:pointer;font-size:13px;padding:0 0 0 4px;line-height:1}
+.cat-pill-del:hover{color:var(--red)}
+
+/* Light theme */
+body.light-mode{
+  --bg:#f4f5f7;--surface:#ffffff;--surface2:#f0f1f4;--surface3:#e5e7eb;
+  --border:#d1d5db;--border2:#c4c9d4;
+  --text:#111827;--text2:#6b7280;--text3:#9ca3af;
+}
+
+/* Spending score */
+.score-ring{position:relative;display:inline-flex;align-items:center;justify-content:center}
+.score-num{position:absolute;font-size:22px;font-weight:700;font-family:var(--mono)}
+
+/* Split bill */
+.split-result{background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px;margin-top:10px}
+.split-row{display:flex;justify-content:space-between;padding:5px 0;font-size:13px;border-bottom:1px solid var(--border)}
+.split-row:last-child{border-bottom:none;font-weight:600;margin-top:4px}
+
 </style>
 </head>
 <body>
+
+<!-- TOAST -->
+<div id="toast" class="toast"><span class="toast-icon" id="toast-icon">✅</span><span id="toast-msg">Saved!</span></div>
+
+<!-- PIN LOCK OVERLAY -->
+<div class="pin-overlay" id="pin-overlay" style="display:none">
+  <div style="text-align:center">
+    <div style="font-size:36px;margin-bottom:8px">🔐</div>
+    <div style="font-size:18px;font-weight:600">MoneyMind</div>
+    <div style="font-size:13px;color:var(--text2);margin-top:4px" id="pin-label">Enter PIN</div>
+  </div>
+  <div class="pin-dots" id="pin-dots">
+    <div class="pin-dot" id="pd0"></div><div class="pin-dot" id="pd1"></div>
+    <div class="pin-dot" id="pd2"></div><div class="pin-dot" id="pd3"></div>
+  </div>
+  <div class="pin-grid">
+    <div class="pin-key" onclick="pinPress(1)">1</div><div class="pin-key" onclick="pinPress(2)">2</div><div class="pin-key" onclick="pinPress(3)">3</div>
+    <div class="pin-key" onclick="pinPress(4)">4</div><div class="pin-key" onclick="pinPress(5)">5</div><div class="pin-key" onclick="pinPress(6)">6</div>
+    <div class="pin-key" onclick="pinPress(7)">7</div><div class="pin-key" onclick="pinPress(8)">8</div><div class="pin-key" onclick="pinPress(9)">9</div>
+    <div class="pin-key" onclick="pinPress('del')" style="font-size:14px">⌫</div><div class="pin-key" onclick="pinPress(0)">0</div><div class="pin-key" onclick="pinPress('ok')" style="color:var(--green)">✓</div>
+  </div>
+  <div id="pin-skip" style="font-size:12px;color:var(--text3);cursor:pointer;margin-top:8px" onclick="unlockApp()">Skip / Use without PIN</div>
+</div>
+
+<!-- EDIT TRANSACTION MODAL -->
+<div class="modal-overlay" id="edit-modal">
+  <div class="modal">
+    <div class="modal-title">Edit Transaction <button class="close-btn" onclick="closeModal('edit-modal')">✕</button></div>
+    <div class="type-toggle">
+      <div class="type-btn" id="edit-btn-exp" onclick="setEditType('expense')">📤 Expense</div>
+      <div class="type-btn" id="edit-btn-inc" onclick="setEditType('income')">📥 Income</div>
+    </div>
+    <input type="hidden" id="edit-tx-id">
+    <input type="hidden" id="edit-tx-type" value="expense">
+    <div class="form-row">
+      <div class="form-group" style="margin:0"><label class="form-label">Amount (₹)</label><input class="form-input" id="edit-tx-amount" type="number"></div>
+      <div class="form-group" style="margin:0"><label class="form-label">Date</label><input class="form-input" id="edit-tx-date" type="date"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group" style="margin:0"><label class="form-label">Category</label><input class="form-input" id="edit-tx-cat" placeholder="Category"></div>
+      <div class="form-group" style="margin:0"><label class="form-label">Payment Mode</label>
+        <select class="form-input" id="edit-tx-mode"><option>UPI</option><option>Card</option><option>Cash</option><option>Net Banking</option></select>
+      </div>
+    </div>
+    <div class="form-group"><label class="form-label">Description</label><input class="form-input" id="edit-tx-desc" placeholder="Description"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn btn-ghost" onclick="closeModal('edit-modal')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveEditTransaction()">Update</button>
+    </div>
+  </div>
+</div>
+
+<!-- CATEGORY MANAGER MODAL -->
+<div class="modal-overlay" id="catmgr-modal">
+  <div class="modal">
+    <div class="modal-title">Manage Custom Categories <button class="close-btn" onclick="closeModal('catmgr-modal')">✕</button></div>
+    <div style="margin-bottom:12px">
+      <div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:8px">💸 EXPENSE CATEGORIES</div>
+      <div id="catmgr-expense"></div>
+    </div>
+    <div>
+      <div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:8px">💰 INCOME CATEGORIES</div>
+      <div id="catmgr-income"></div>
+    </div>
+    <div style="margin-top:16px;font-size:11px;color:var(--text3)">Only custom categories can be deleted. Built-in categories are permanent.</div>
+  </div>
+</div>
+
+<!-- SPLIT BILL MODAL -->
+<div class="modal-overlay" id="split-modal">
+  <div class="modal" style="width:380px">
+    <div class="modal-title">🍽 Split Bill Calculator <button class="close-btn" onclick="closeModal('split-modal')">✕</button></div>
+    <div class="form-group"><label class="form-label">Total Bill Amount (₹)</label><input class="form-input" id="split-total" type="number" placeholder="1200" oninput="calcSplit()"></div>
+    <div class="form-group"><label class="form-label">Number of People</label><input class="form-input" id="split-people" type="number" placeholder="4" min="1" oninput="calcSplit()"></div>
+    <div class="form-group"><label class="form-label">Your Share (%) — optional</label><input class="form-input" id="split-mypct" type="number" placeholder="50" oninput="calcSplit()"></div>
+    <div id="split-result" style="display:none" class="split-result">
+      <div class="split-row"><span style="color:var(--text2)">Per Person</span><span id="split-per">-</span></div>
+      <div class="split-row"><span style="color:var(--text2)">Your Share</span><span id="split-mine" style="color:var(--green)">-</span></div>
+      <div class="split-row"><span style="color:var(--text2)">Others Pay</span><span id="split-others">-</span></div>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
+      <button class="btn btn-ghost" onclick="closeModal('split-modal')">Close</button>
+      <button class="btn btn-primary" onclick="addSplitAsExpense()">Add My Share as Expense</button>
+    </div>
+  </div>
+</div>
+
+<!-- SETTINGS MODAL -->
+<div class="modal-overlay" id="settings-modal">
+  <div class="modal">
+    <div class="modal-title">⚙️ Settings <button class="close-btn" onclick="closeModal('settings-modal')">✕</button></div>
+    <div style="display:flex;flex-direction:column;gap:14px">
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:12px;background:var(--surface2);border-radius:var(--radius-sm)">
+        <div><div style="font-size:13px;font-weight:500">🌙 Dark / Light Mode</div><div style="font-size:11px;color:var(--text3)">Switch theme</div></div>
+        <button class="theme-btn" id="theme-toggle-btn" onclick="toggleTheme()">☀️ Light</button>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:12px;background:var(--surface2);border-radius:var(--radius-sm)">
+        <div><div style="font-size:13px;font-weight:500">🔐 PIN Lock</div><div style="font-size:11px;color:var(--text3)" id="pin-status-label">Protect your data</div></div>
+        <button class="btn btn-ghost btn-sm" onclick="openPinSetup()">Set PIN</button>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:12px;background:var(--surface2);border-radius:var(--radius-sm)">
+        <div><div style="font-size:13px;font-weight:500">📁 Manage Categories</div><div style="font-size:11px;color:var(--text3)">View / delete custom categories</div></div>
+        <button class="btn btn-ghost btn-sm" onclick="openCatManager()">Open</button>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:12px;background:var(--surface2);border-radius:var(--radius-sm)">
+        <div><div style="font-size:13px;font-weight:500">💾 Backup Data</div><div style="font-size:11px;color:var(--text3)">Download JSON backup</div></div>
+        <button class="btn btn-ghost btn-sm" onclick="backupData()">Download</button>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:12px;background:var(--surface2);border-radius:var(--radius-sm)">
+        <div><div style="font-size:13px;font-weight:500">📂 Restore Data</div><div style="font-size:11px;color:var(--text3)">Load from JSON backup</div></div>
+        <label class="btn btn-ghost btn-sm" style="cursor:pointer">Restore <input type="file" accept=".json" style="display:none" onchange="restoreData(this)"></label>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:12px;background:var(--red-bg);border-radius:var(--radius-sm);border:1px solid var(--red-bg)">
+        <div><div style="font-size:13px;font-weight:500;color:var(--red)">🗑 Clear All Data</div><div style="font-size:11px;color:var(--text3)">Cannot be undone</div></div>
+        <button class="btn btn-danger btn-sm" onclick="clearAllData()">Clear</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 
 <!-- CUSTOM CATEGORY MODAL -->
 <div class="modal-overlay" id="custom-cat-modal">
@@ -238,8 +419,14 @@ textarea.form-input{resize:none;min-height:70px}
     </button>
   </div>
   <div class="sidebar-bottom">
-    <div class="balance-label">Net Balance</div>
-    <div class="balance-amount" id="sidebar-balance">₹0</div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+      <div>
+        <div class="balance-label">Net Balance</div>
+        <div class="balance-amount" id="sidebar-balance">₹0</div>
+      </div>
+      <button class="theme-btn" id="sidebar-theme-btn" onclick="toggleTheme()" title="Toggle theme" style="padding:6px 8px">🌙</button>
+    </div>
+    <button class="btn btn-ghost btn-sm" style="width:100%;justify-content:center;margin-top:4px" onclick="document.getElementById('settings-modal').classList.add('open')">⚙️ Settings</button>
   </div>
 </nav>
 
@@ -253,7 +440,14 @@ textarea.form-input{resize:none;min-height:70px}
         <div class="page-title">Dashboard</div>
         <div class="page-sub" id="dash-month">May 2025 overview</div>
       </div>
-      <button class="btn btn-primary" onclick="openAddModal()">+ Add Transaction</button>
+      <div style="display:flex;gap:8px;align-items:center">
+        <div class="month-nav">
+          <button onclick="changeMonth(-1)">‹</button>
+          <span id="dash-month-nav">May 2026</span>
+          <button onclick="changeMonth(1)">›</button>
+        </div>
+        <button class="btn btn-primary" onclick="openAddModal()">+ Add Transaction</button>
+      </div>
     </div>
     <div class="grid-4">
       <div class="card card-sm">
@@ -287,6 +481,7 @@ textarea.form-input{resize:none;min-height:70px}
         <div class="chart-box"><canvas id="bar-chart"></canvas></div>
       </div>
     </div>
+    <div class="grid-3" id="dash-quick-stats" style="margin-bottom:24px"></div>
     <div class="card">
       <div class="section-head">
         <h3>Recent Transactions</h3>
@@ -400,7 +595,10 @@ textarea.form-input{resize:none;min-height:70px}
 
   <!-- TOOLS -->
   <div id="page-tools" class="page">
-    <div class="page-header"><div class="page-title">Tools</div><div class="page-sub">Financial calculators</div></div>
+    <div class="page-header" style="display:flex;justify-content:space-between;align-items:flex-start">
+      <div><div class="page-title">Tools</div><div class="page-sub">Financial calculators</div></div>
+      <button class="btn btn-ghost" onclick="document.getElementById('split-modal').classList.add('open')">🍽 Split Bill</button>
+    </div>
     <div class="grid-2">
       <div class="card">
         <h3 style="font-size:15px;font-weight:600;margin-bottom:16px">💳 EMI Calculator</h3>
@@ -717,7 +915,7 @@ function renderPage(name){
 // ===== DASHBOARD =====
 let pieChart,barChart;
 function renderDashboard(){
-  const now=new Date(),m=now.getMonth(),y=now.getFullYear();
+  const m=viewMonth,y=viewYear;
   const monthTx=state.transactions.filter(t=>{const d=new Date(t.date);return d.getMonth()===m&&d.getFullYear()===y;});
   const income=monthTx.filter(t=>t.type==='income').reduce((s,t)=>s+t.amount,0);
   const expense=monthTx.filter(t=>t.type==='expense').reduce((s,t)=>s+t.amount,0);
@@ -725,6 +923,11 @@ function renderDashboard(){
   const rate=income>0?Math.round(savings/income*100):0;
   const daysInMonth=new Date(y,m+1,0).getDate();
   const daily=Math.round(expense/daysInMonth);
+  // Update month nav
+  const navEl=document.getElementById('dash-month-nav');
+  if(navEl)navEl.textContent=MONTHS[m]+' '+y;
+  const subEl=document.getElementById('dash-month');
+  if(subEl)subEl.textContent=MONTHS[m]+' '+y+' overview';
   document.getElementById('stat-income').textContent=fmt(income);
   document.getElementById('stat-expense').textContent=fmt(expense);
   document.getElementById('stat-savings').textContent=fmt(savings);
@@ -733,6 +936,8 @@ function renderDashboard(){
   document.getElementById('stat-savings-rate').className='stat-change '+(rate>20?'up':rate>0?'neutral':'down');
   document.getElementById('stat-daily').textContent=fmt(daily);
   document.getElementById('sidebar-balance').textContent=fmt(savings);
+  // Quick stats
+  renderQuickStats(monthTx,income,expense);
   // Recent transactions
   const recent=state.transactions.slice().sort((a,b)=>new Date(b.date)-new Date(a.date)).slice(0,5);
   document.getElementById('recent-tx').innerHTML=recent.map(txHTML).join('');
@@ -778,7 +983,7 @@ function txHTML(t, showDelete=false){
     <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
       ${t.photo?`<img src="${t.photo}" onclick="viewPhoto('${t.id}')" style="width:36px;height:36px;border-radius:6px;object-fit:cover;cursor:pointer;border:1px solid var(--border2)" title="View receipt">` : ''}
       <div class="tx-amount ${isExp?'tx-expense':'tx-income'}">${isExp?'-':'+'}${fmt(t.amount)}</div>
-      ${showDelete?`<button class="btn btn-ghost btn-sm" style="color:var(--red);padding:4px 8px" onclick="deleteTx(${t.id})">✕</button>`:''}
+      ${showDelete?`<button class="btn btn-ghost btn-sm" style="color:var(--blue);padding:4px 8px;margin-right:2px" onclick="openEditModal(${t.id})" title="Edit">✏️</button><button class="btn btn-ghost btn-sm" style="color:var(--red);padding:4px 8px" onclick="deleteTx(${t.id})" title="Delete">✕</button>`:''}
     </div>
   </div>`;
 }
@@ -1204,6 +1409,7 @@ function saveTransaction(){
   document.getElementById('tx-custom-cat').value='';
   document.getElementById('custom-cat-wrap').style.display='none';
   clearPhoto();
+  toast('Transaction saved!','✅');
   renderDashboard();
 }
 
@@ -1259,6 +1465,295 @@ function exportCSV(){
   const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='moneymind_export.csv';a.click();
 }
 
+
+
+// ===== TOAST =====
+function toast(msg, icon='✅', dur=2800){
+  const t=document.getElementById('toast');
+  document.getElementById('toast-msg').textContent=msg;
+  document.getElementById('toast-icon').textContent=icon;
+  t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'),dur);
+}
+
+// ===== MONTH NAVIGATION =====
+let viewMonth = new Date().getMonth();
+let viewYear  = new Date().getFullYear();
+const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+
+function changeMonth(dir){
+  viewMonth += dir;
+  if(viewMonth > 11){viewMonth=0;viewYear++;}
+  if(viewMonth < 0){viewMonth=11;viewYear--;}
+  renderDashboard();
+}
+
+// ===== THEME TOGGLE =====
+function toggleTheme(){
+  document.body.classList.toggle('light-mode');
+  const isLight=document.body.classList.contains('light-mode');
+  localStorage.setItem('mm_theme', isLight?'light':'dark');
+  const btn=document.getElementById('sidebar-theme-btn');
+  const tbtn=document.getElementById('theme-toggle-btn');
+  if(btn)btn.textContent=isLight?'🌙':'☀️';
+  if(tbtn)tbtn.textContent=isLight?'🌙 Dark':'☀️ Light';
+}
+// Apply saved theme
+(function(){
+  const t=localStorage.getItem('mm_theme');
+  if(t==='light'){
+    document.body.classList.add('light-mode');
+    setTimeout(()=>{
+      const btn=document.getElementById('sidebar-theme-btn');
+      const tbtn=document.getElementById('theme-toggle-btn');
+      if(btn)btn.textContent='☀️';
+      if(tbtn)tbtn.textContent='🌙 Dark';
+    },100);
+  }
+})();
+
+// ===== PIN LOCK =====
+let pinBuffer='';
+let pinMode='unlock'; // 'unlock' | 'setup' | 'confirm'
+let pinSetupTemp='';
+
+function initPinLock(){
+  const savedPin=localStorage.getItem('mm_pin');
+  const pinStatusLabel=document.getElementById('pin-status-label');
+  if(savedPin){
+    if(pinStatusLabel)pinStatusLabel.textContent='PIN is set — click to change';
+    document.getElementById('pin-overlay').style.display='flex';
+    document.getElementById('pin-skip').style.display='block';
+    pinMode='unlock';
+    document.getElementById('pin-label').textContent='Enter your PIN';
+  }
+}
+
+function openPinSetup(){
+  pinMode='setup';pinBuffer='';pinSetupTemp='';
+  updatePinDots();
+  document.getElementById('pin-label').textContent='Set a new 4-digit PIN';
+  document.getElementById('pin-skip').style.display='none';
+  document.getElementById('pin-overlay').style.display='flex';
+  closeModal('settings-modal');
+}
+
+function unlockApp(){
+  document.getElementById('pin-overlay').style.display='none';
+  pinBuffer='';
+  updatePinDots();
+}
+
+function pinPress(k){
+  if(k==='del'){pinBuffer=pinBuffer.slice(0,-1);updatePinDots();return;}
+  if(k==='ok'){processPinOk();return;}
+  if(pinBuffer.length>=4)return;
+  pinBuffer+=k;
+  updatePinDots();
+  if(pinBuffer.length===4)setTimeout(processPinOk,200);
+}
+
+function updatePinDots(){
+  for(let i=0;i<4;i++){
+    const d=document.getElementById('pd'+i);
+    if(d)d.className='pin-dot'+(i<pinBuffer.length?' filled':'');
+  }
+}
+
+function processPinOk(){
+  if(pinMode==='unlock'){
+    const saved=localStorage.getItem('mm_pin');
+    if(pinBuffer===saved){unlockApp();toast('Unlocked!','🔓');}
+    else{
+      document.getElementById('pin-label').textContent='Wrong PIN. Try again.';
+      pinBuffer='';updatePinDots();
+    }
+  } else if(pinMode==='setup'){
+    if(pinBuffer.length<4){document.getElementById('pin-label').textContent='Enter 4 digits';return;}
+    pinSetupTemp=pinBuffer;pinBuffer='';
+    pinMode='confirm';
+    document.getElementById('pin-label').textContent='Confirm your PIN';
+    updatePinDots();
+  } else if(pinMode==='confirm'){
+    if(pinBuffer===pinSetupTemp){
+      localStorage.setItem('mm_pin',pinBuffer);
+      unlockApp();
+      toast('PIN set successfully!','🔐');
+      const lbl=document.getElementById('pin-status-label');
+      if(lbl)lbl.textContent='PIN is set — click to change';
+    } else {
+      document.getElementById('pin-label').textContent='PINs do not match. Try again.';
+      pinBuffer='';pinSetupTemp='';pinMode='setup';updatePinDots();
+    }
+  }
+}
+
+// ===== EDIT TRANSACTION =====
+function openEditModal(id){
+  const t=state.transactions.find(x=>x.id===id);
+  if(!t)return;
+  document.getElementById('edit-tx-id').value=id;
+  document.getElementById('edit-tx-amount').value=t.amount;
+  document.getElementById('edit-tx-date').value=t.date;
+  document.getElementById('edit-tx-cat').value=t.category;
+  document.getElementById('edit-tx-desc').value=t.desc||'';
+  document.getElementById('edit-tx-mode').value=t.mode||'UPI';
+  setEditType(t.type);
+  document.getElementById('edit-modal').classList.add('open');
+}
+
+function setEditType(t){
+  document.getElementById('edit-tx-type').value=t;
+  document.getElementById('edit-btn-exp').className='type-btn'+(t==='expense'?' active-exp':'');
+  document.getElementById('edit-btn-inc').className='type-btn'+(t==='income'?' active-inc':'');
+}
+
+function saveEditTransaction(){
+  const id=parseInt(document.getElementById('edit-tx-id').value);
+  const amt=parseFloat(document.getElementById('edit-tx-amount').value);
+  if(!amt||amt<=0){toast('Valid amount enter ചെയ്യൂ','⚠️');return;}
+  const idx=state.transactions.findIndex(x=>x.id===id);
+  if(idx===-1)return;
+  state.transactions[idx]={
+    ...state.transactions[idx],
+    amount:amt,
+    type:document.getElementById('edit-tx-type').value,
+    category:document.getElementById('edit-tx-cat').value,
+    desc:document.getElementById('edit-tx-desc').value,
+    date:document.getElementById('edit-tx-date').value,
+    mode:document.getElementById('edit-tx-mode').value,
+  };
+  saveState();closeModal('edit-modal');
+  toast('Transaction updated!','✏️');
+  renderPage(document.querySelector('.page.active')?.id?.replace('page-','') || 'dashboard');
+  renderDashboard();
+}
+
+// ===== CATEGORY MANAGER =====
+function openCatManager(){
+  renderCatManager();
+  document.getElementById('catmgr-modal').classList.add('open');
+}
+
+function renderCatManager(){
+  ['expense','income'].forEach(type=>{
+    const customs=(state.customCats||{})[type]||[];
+    const el=document.getElementById('catmgr-'+type);
+    if(!customs.length){el.innerHTML='<span style="font-size:12px;color:var(--text3)">No custom categories yet</span>';return;}
+    el.innerHTML=customs.map((c,i)=>{
+      const label=typeof c==='string'?c:c.l;
+      const val=typeof c==='string'?c:c.v;
+      return `<span class="cat-pill">${label}<button class="cat-pill-del" onclick="deleteCustomCat('${type}',${i})" title="Delete">✕</button></span>`;
+    }).join('');
+  });
+}
+
+function deleteCustomCat(type, idx){
+  if(!state.customCats||!state.customCats[type])return;
+  const removed=state.customCats[type][idx];
+  state.customCats[type].splice(idx,1);
+  saveState();renderCatManager();
+  toast('Category removed!','🗑');
+}
+
+// ===== SPLIT BILL =====
+function calcSplit(){
+  const total=parseFloat(document.getElementById('split-total').value)||0;
+  const people=parseInt(document.getElementById('split-people').value)||0;
+  const myPct=parseFloat(document.getElementById('split-mypct').value)||0;
+  if(!total||!people){document.getElementById('split-result').style.display='none';return;}
+  const perPerson=total/people;
+  const mine=myPct?total*(myPct/100):perPerson;
+  const others=total-mine;
+  document.getElementById('split-per').textContent=fmt(Math.round(perPerson));
+  document.getElementById('split-mine').textContent=fmt(Math.round(mine));
+  document.getElementById('split-others').textContent=fmt(Math.round(others));
+  document.getElementById('split-result').style.display='block';
+}
+
+function addSplitAsExpense(){
+  const mine=parseFloat(document.getElementById('split-mine')?.textContent?.replace(/[^0-9.]/g,''));
+  if(!mine)return;
+  closeModal('split-modal');
+  openAddModal();
+  setTimeout(()=>{
+    document.getElementById('tx-amount').value=mine;
+    setType('expense');
+    document.getElementById('tx-desc').value='Split bill';
+  },200);
+  toast('Amount prefilled! Add details and save.','🍽');
+}
+
+// ===== BACKUP & RESTORE =====
+function backupData(){
+  const json=JSON.stringify(state,null,2);
+  const blob=new Blob([json],{type:'application/json'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download='moneymind_backup_'+new Date().toISOString().split('T')[0]+'.json';
+  a.click();
+  toast('Backup downloaded!','💾');
+}
+
+function restoreData(input){
+  const file=input.files[0];if(!file)return;
+  const reader=new FileReader();
+  reader.onload=e=>{
+    try{
+      const data=JSON.parse(e.target.result);
+      if(!data.transactions)throw new Error('Invalid file');
+      state=data;saveState();
+      toast('Data restored successfully!','📂');
+      renderDashboard();
+      closeModal('settings-modal');
+    }catch(err){toast('Invalid backup file!','❌');}
+  };
+  reader.readAsText(file);
+  input.value='';
+}
+
+// ===== CLEAR ALL DATA =====
+function clearAllData(){
+  if(!confirm('All data will be permanently deleted. Are you sure?'))return;
+  localStorage.removeItem('moneymind_v1');
+  location.reload();
+}
+
+// ===== QUICK STATS FOR DASHBOARD =====
+function renderQuickStats(monthTx, income, expense){
+  const el=document.getElementById('dash-quick-stats');
+  if(!el)return;
+  const txCount=monthTx.length;
+  const topCat=(()=>{
+    const cats={};
+    monthTx.filter(t=>t.type==='expense').forEach(t=>cats[t.category]=(cats[t.category]||0)+t.amount);
+    const top=Object.entries(cats).sort((a,b)=>b[1]-a[1])[0];
+    return top?top[0]:'—';
+  })();
+  // Spending score: 100 = all saved, 0 = overspent
+  const score=income>0?Math.max(0,Math.min(100,Math.round((income-expense)/income*100))):0;
+  const scoreColor=score>50?'var(--green)':score>20?'var(--amber)':'var(--red)';
+  el.innerHTML=`
+    <div class="card card-sm" style="display:flex;align-items:center;gap:14px">
+      <div style="position:relative;width:56px;height:56px;flex-shrink:0">
+        <svg width="56" height="56" viewBox="0 0 56 56"><circle cx="28" cy="28" r="22" fill="none" stroke="var(--surface3)" stroke-width="5"/><circle cx="28" cy="28" r="22" fill="none" stroke="${scoreColor}" stroke-width="5" stroke-dasharray="${Math.round(score*1.382)} 138.2" stroke-linecap="round" transform="rotate(-90 28 28)"/></svg>
+        <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;font-family:var(--mono);color:${scoreColor}">${score}</div>
+      </div>
+      <div><div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em">Savings Score</div><div style="font-size:12px;color:var(--text2);margin-top:3px">${score>60?'Excellent 🌟':score>40?'Good 👍':score>20?'Fair ⚠️':'Overspending 🔴'}</div></div>
+    </div>
+    <div class="card card-sm">
+      <div class="stat-label">Top Category</div>
+      <div style="font-size:16px;font-weight:600;margin-top:4px">${catIcons[topCat]||'📦'} ${topCat}</div>
+      <div style="font-size:11px;color:var(--text3);margin-top:4px">Highest spend</div>
+    </div>
+    <div class="card card-sm">
+      <div class="stat-label">This Month</div>
+      <div style="font-size:16px;font-weight:600;margin-top:4px">${txCount} transactions</div>
+      <div style="font-size:11px;color:var(--text3);margin-top:4px">Total entries</div>
+    </div>`;
+}
+
+
 // Close modals on overlay click
 document.querySelectorAll('.modal-overlay').forEach(o=>o.addEventListener('click',e=>{if(e.target===o)o.classList.remove('open');}));
 
@@ -1266,6 +1761,7 @@ document.querySelectorAll('.modal-overlay').forEach(o=>o.addEventListener('click
 if(!state.customCats)state.customCats={};
 populateCatSelect('expense');
 renderDashboard();
+initPinLock();
 </script>
 </body>
 </html>
