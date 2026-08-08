@@ -19,7 +19,7 @@ const PRECACHE = [
   './js/charts.js', './js/ai.js', './js/seed.js', './js/sync.js', './js/landing.js', './js/gdrive.js',
   './js/views/common.js', './js/views/dashboard.js', './js/views/tracker.js', './js/views/credit.js',
   './js/views/investments.js', './js/views/marketing.js', './js/views/budget.js', './js/views/bills.js',
-  './js/views/goals.js', './js/views/loans.js', './js/views/reports.js', './js/views/analytics.js',
+  './js/views/shopping.js', './js/views/goals.js', './js/views/loans.js', './js/views/reports.js', './js/views/analytics.js',
   './js/views/categories.js', './js/views/calendar.js', './js/views/reminders.js', './js/views/notifications.js',
   './js/views/settings.js', './js/views/custom.js', './js/views/accounts.js',
   './assets/icon.svg',
