@@ -28,32 +28,40 @@ import { dataTable, prompt } from '../ui.js';
 
 /** Units people actually shop in. Free text invited kg / Kg / KG and made the
     catalogue unmatchable, so this is a fixed list. Blank is allowed. */
-export const UNITS = ['nos', 'pcs', 'unit', 'kg', 'g', 'l', 'ml', 'm', 'cm',
-  'dozen', 'pack', 'packet', 'box', 'bag', 'bottle', 'can', 'tin', 'bunch', 'block', 'tray',
-  'lb', 'oz'];
+export const UNITS = ['Nos', 'Pcs', 'Unit', 'Kg', 'Gram', 'Litre', 'Ml', 'Metre', 'Cm',
+  'Dozen', 'Pack', 'Packet', 'Box', 'Bag', 'Bottle', 'Can', 'Tin', 'Bunch', 'Block', 'Tray',
+  'Pound', 'Ounce'];
 
 /** How people actually type units, mapped onto UNITS above. "500g", "1 Kg",
     "2 ltr", "3 pkt" all have to land on the same value or the catalogue splits
     into near-duplicates that never match each other. */
 const UNIT_ALIASES = {
-  kg: 'kg', kgs: 'kg', kilo: 'kg', kilos: 'kg', kilogram: 'kg', kilograms: 'kg',
-  g: 'g', gm: 'g', gms: 'g', gr: 'g', gram: 'g', grams: 'g',
-  l: 'l', lt: 'l', ltr: 'l', ltrs: 'l', litre: 'l', litres: 'l', liter: 'l', liters: 'l',
-  ml: 'ml', mls: 'ml',
-  pc: 'pcs', pcs: 'pcs', piece: 'pcs', pieces: 'pcs',
-  no: 'nos', nos: 'nos', number: 'nos', numbers: 'nos',
-  unit: 'unit', units: 'unit',
-  m: 'm', mtr: 'm', metre: 'm', meter: 'm', metres: 'm', meters: 'm', cm: 'cm',
-  pack: 'pack', packs: 'pack', pkt: 'packet', pkts: 'packet', packet: 'packet', packets: 'packet',
-  box: 'box', boxes: 'box', bag: 'bag', bags: 'bag',
-  bottle: 'bottle', bottles: 'bottle', btl: 'bottle',
-  can: 'can', cans: 'can', tin: 'tin', tins: 'tin',
-  dozen: 'dozen', dz: 'dozen', doz: 'dozen',
-  bunch: 'bunch', bunches: 'bunch', block: 'block', blocks: 'block',
-  tray: 'tray', trays: 'tray',
-  lb: 'lb', lbs: 'lb', pound: 'lb', pounds: 'lb',
-  oz: 'oz', ounce: 'oz', ounces: 'oz',
+  kg: 'Kg', kgs: 'Kg', kilo: 'Kg', kilos: 'Kg', kilogram: 'Kg', kilograms: 'Kg',
+  g: 'Gram', gm: 'Gram', gms: 'Gram', gr: 'Gram', gram: 'Gram', grams: 'Gram',
+  l: 'Litre', lt: 'Litre', ltr: 'Litre', ltrs: 'Litre',
+  litre: 'Litre', litres: 'Litre', liter: 'Litre', liters: 'Litre',
+  ml: 'Ml', mls: 'Ml',
+  pc: 'Pcs', pcs: 'Pcs', piece: 'Pcs', pieces: 'Pcs',
+  no: 'Nos', nos: 'Nos', number: 'Nos', numbers: 'Nos',
+  unit: 'Unit', units: 'Unit',
+  m: 'Metre', mtr: 'Metre', metre: 'Metre', meter: 'Metre', metres: 'Metre', meters: 'Metre',
+  cm: 'Cm',
+  pack: 'Pack', packs: 'Pack', pkt: 'Packet', pkts: 'Packet', packet: 'Packet', packets: 'Packet',
+  box: 'Box', boxes: 'Box', bag: 'Bag', bags: 'Bag',
+  bottle: 'Bottle', bottles: 'Bottle', btl: 'Bottle',
+  can: 'Can', cans: 'Can', tin: 'Tin', tins: 'Tin',
+  dozen: 'Dozen', dz: 'Dozen', doz: 'Dozen',
+  bunch: 'Bunch', bunches: 'Bunch', block: 'Block', blocks: 'Block',
+  tray: 'Tray', trays: 'Tray',
+  lb: 'Pound', lbs: 'Pound', pound: 'Pound', pounds: 'Pound',
+  oz: 'Ounce', ounce: 'Ounce', ounces: 'Ounce',
 };
+/** Turns anything already stored ("kg", "l") into today's spelling ("Kg",
+    "Litre"), so old rows read the same as new ones with no data migration. */
+export const canonUnit = u => UNIT_ALIASES[String(u || '').toLowerCase()] || u || '';
+/** Item and product names are stored in capitals so a list reads evenly whether
+    someone typed MILK, Milk or milk. */
+export const upperName = s => String(s || '').trim().replace(/\s+/g, ' ').toUpperCase();
 /* Longest first so "500gm" cannot be read as 500 g followed by a stray "m". */
 const ALIAS_RE = Object.keys(UNIT_ALIASES).sort((a, b) => b.length - a.length).join('|');
 /* Only measures are recognised WITHOUT a number in front. "can", "box", "tin",
@@ -100,8 +108,7 @@ export function parseItem(raw) {
     if (b) { unit = UNIT_ALIASES[b[1].toLowerCase()] || ''; s = cut(s, b.index, b[0].length); }
   }
 
-  const name = s.replace(/^[-–,.\s]+|[-–,.\s]+$/g, '');
-  return { name: name.charAt(0).toUpperCase() + name.slice(1), qty, unit, price };
+  return { name: upperName(s.replace(/^[-–,.\s]+|[-–,.\s]+$/g, '')), qty, unit, price };
 }
 
 /**
@@ -118,7 +125,7 @@ export const parseLines = text => String(text || '')
 
 const itemsOf = listId => state.shoppingItems.filter(i => i.listId === listId);
 const lineTotal = i => Number(i.price) || 0;
-const qtyLabel = i => (i.qty ? `${i.qty}${i.unit ? ` ${i.unit}` : ''}` : i.unit || '');
+const qtyLabel = i => { const u = canonUnit(i.unit); return i.qty ? `${i.qty}${u ? ` ${u}` : ''}` : u; };
 const listOf = id => store.find('shoppingLists', id);
 const sumOf = rows => money(rows.reduce((a, i) => a + lineTotal(i), 0));
 const norm = s => String(s || '').trim().toLowerCase();
@@ -435,9 +442,12 @@ function ensureDestination(l) {
    The name box still understands a whole line, so "rice 1kg" typed there splits
    itself across the three boxes on blur. Pasting several lines at once fills a
    row each, which is the fastest way in when the list already exists somewhere. */
-const unitSelect = (value = '') => h('select', { class: 'inp', style: { width: '100%' } },
-  h('option', { value: '' }, 'Unit'),
-  ...UNITS.map(u => h('option', { value: u, selected: u === value }, u)));
+const unitSelect = (value = '') => {
+  const cur = canonUnit(value);
+  return h('select', { class: 'inp', style: { width: '100%' } },
+    h('option', { value: '' }, 'Unit'),
+    ...UNITS.map(u => h('option', { value: u, selected: u === cur }, u)));
+};
 
 function bulkRows({ title, subtitle, submitText, startRows = 5, onRows }) {
   const m = modal({ title, subtitle, size: 'wide' });
@@ -602,7 +612,7 @@ function pasteIntoList(l, after) {
 function editItem(i, l, after) {
   const { modal: m } = formModal({
     title: `Edit ${i.name}`, size: '', columns: 2,
-    values: i,
+    values: { ...i, unit: canonUnit(i.unit) },
     fields: [
       { key: 'name', label: 'Item', type: 'text', required: true, col: 'full', placeholder: 'e.g. Sugar' },
       { key: 'qty', label: 'Quantity', type: 'number', min: 0, step: 'any' },
@@ -611,7 +621,7 @@ function editItem(i, l, after) {
       { key: 'note', label: 'Note', type: 'text', col: 'full' },
     ],
     onSubmit: async v => {
-      const rec = { ...i, ...v };
+      const rec = { ...i, ...v, name: upperName(v.name) || i.name };
       await store.save('shoppingItems', rec);
       // Keep an already-recorded expense honest if the price was corrected later.
       const t = rec.bought && rec.txnId ? store.find('transactions', rec.txnId) : null;
@@ -816,7 +826,7 @@ function productsPanel(redraw) {
 function editProduct(p, redraw) {
   const { modal: m } = formModal({
     title: p ? `Edit ${p.name}` : 'New product', size: '', columns: 2,
-    values: p || {},
+    values: p ? { ...p, unit: canonUnit(p.unit) } : {},
     fields: [
       { key: 'name', label: 'Product name', type: 'text', required: true, col: 'full',
         placeholder: 'e.g. rice 1kg, sugar 500g, milk 2', hint: 'Type the quantity with the name — it is split out for you.' },
@@ -833,7 +843,7 @@ function editProduct(p, redraw) {
       // "rice 1kg" typed here lands as Rice / 1 / kg rather than a product
       // literally called "rice 1kg". Anything typed in the fields below wins.
       const parsed = parseItem(v.name);
-      const name = parsed.name || String(v.name || '').trim();
+      const name = parsed.name || upperName(v.name);
       if (!name) { toast('Give the product a name', 'warn'); return; }
       // Two rows for the same thing show up twice in the picker, so refuse the
       // duplicate instead of merging blindly.
@@ -853,7 +863,7 @@ function addToList(p, redraw) {
   if (!open.length) { toast('No active list — make one first', 'warn'); return; }
   const { modal: m } = formModal({
     title: `Add ${p.name}`, size: '', columns: 2,
-    values: { listId: open[0].id, qty: p.qty || 1, unit: p.unit || '', price: 0 },
+    values: { listId: open[0].id, qty: p.qty || 1, unit: canonUnit(p.unit), price: 0 },
     fields: [
       { key: 'listId', label: 'To list', type: 'select', options: open.map(l => [l.id, l.name]), required: true, col: 'full' },
       { key: 'qty', label: 'Quantity', type: 'number', min: 0, step: 'any' },
