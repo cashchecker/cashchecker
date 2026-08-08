@@ -31,6 +31,75 @@ import { dataTable, prompt } from '../ui.js';
 export const UNITS = ['pcs', 'kg', 'g', 'l', 'ml', 'pack', 'packet', 'box', 'bag',
   'bottle', 'can', 'tin', 'dozen', 'bunch', 'block', 'tray', 'lb', 'oz'];
 
+/** How people actually type units, mapped onto UNITS above. "500g", "1 Kg",
+    "2 ltr", "3 pkt" all have to land on the same value or the catalogue splits
+    into near-duplicates that never match each other. */
+const UNIT_ALIASES = {
+  kg: 'kg', kgs: 'kg', kilo: 'kg', kilos: 'kg', kilogram: 'kg', kilograms: 'kg',
+  g: 'g', gm: 'g', gms: 'g', gr: 'g', gram: 'g', grams: 'g',
+  l: 'l', lt: 'l', ltr: 'l', ltrs: 'l', litre: 'l', litres: 'l', liter: 'l', liters: 'l',
+  ml: 'ml', mls: 'ml',
+  pc: 'pcs', pcs: 'pcs', piece: 'pcs', pieces: 'pcs', nos: 'pcs', unit: 'pcs', units: 'pcs',
+  pack: 'pack', packs: 'pack', pkt: 'packet', pkts: 'packet', packet: 'packet', packets: 'packet',
+  box: 'box', boxes: 'box', bag: 'bag', bags: 'bag',
+  bottle: 'bottle', bottles: 'bottle', btl: 'bottle',
+  can: 'can', cans: 'can', tin: 'tin', tins: 'tin',
+  dozen: 'dozen', dz: 'dozen', doz: 'dozen',
+  bunch: 'bunch', bunches: 'bunch', block: 'block', blocks: 'block',
+  tray: 'tray', trays: 'tray',
+  lb: 'lb', lbs: 'lb', pound: 'lb', pounds: 'lb',
+  oz: 'oz', ounce: 'oz', ounces: 'oz',
+};
+/* Longest first so "500gm" cannot be read as 500 g followed by a stray "m". */
+const ALIAS_RE = Object.keys(UNIT_ALIASES).sort((a, b) => b.length - a.length).join('|');
+/* Only measures are recognised WITHOUT a number in front. "can", "box", "tin",
+   "unit" are ordinary words too, and eating them out of a product name ("milk
+   can", "unit pack") is worse than making someone pick the unit by hand. */
+const BARE_RE = ['kilograms', 'kilogram', 'kilos', 'kilo', 'kgs', 'kg', 'grams', 'gram', 'gms', 'gm', 'g',
+  'litres', 'litre', 'liters', 'liter', 'ltrs', 'ltr', 'lt', 'l', 'mls', 'ml',
+  'dozen', 'pcs', 'pounds', 'pound', 'lbs', 'lb', 'ounces', 'ounce', 'oz'].join('|');
+
+/**
+ * Reads one typed line into an item: "rice 1kg" → Rice, 1, kg.
+ *
+ * Written for how a shopping list is actually jotted down — one line, name and
+ * amount together, in whatever order they come out. Quantity, unit and price are
+ * all optional; "milk" alone is a perfectly good reminder to buy milk.
+ *
+ *   rice 1kg        → Rice · 1 kg
+ *   sugar 500g      → Sugar · 500 g
+ *   coconut oil 1l  → Coconut oil · 1 l
+ *   oil 500ml       → Oil · 500 ml
+ *   milk 2          → Milk · 2
+ *   2kg onion @90   → Onion · 2 kg · 90
+ */
+export function parseItem(raw) {
+  let s = String(raw || '').trim().replace(/\s+/g, ' ');
+  let price = null, qty = null, unit = '';
+
+  // Price only when explicitly marked, never "the last number" — that would
+  // turn "milk 2" into two rupees of milk.
+  s = s.replace(/(?:@|₹|rs\.?)\s*(\d+(?:[.,]\d+)?)/i, (_, n) => {
+    price = Number(String(n).replace(',', '.')); return ' ';
+  }).trim();
+
+  const cut = (str, at, len) => (str.slice(0, at) + ' ' + str.slice(at + len)).replace(/\s+/g, ' ').trim();
+
+  const m = s.match(new RegExp(`(?:^|\\s)(\\d+(?:[.,]\\d+)?)\\s*(${ALIAS_RE})?(?=\\s|$)`, 'i'));
+  if (m) {
+    qty = Number(String(m[1]).replace(',', '.'));
+    if (m[2]) unit = UNIT_ALIASES[m[2].toLowerCase()] || '';
+    s = cut(s, m.index, m[0].length);
+  }
+  if (!unit) {
+    const b = s.match(new RegExp(`(?:^|\\s)(${BARE_RE})(?=\\s|$)`, 'i'));
+    if (b) { unit = UNIT_ALIASES[b[1].toLowerCase()] || ''; s = cut(s, b.index, b[0].length); }
+  }
+
+  const name = s.replace(/^[-–,.\s]+|[-–,.\s]+$/g, '');
+  return { name: name.charAt(0).toUpperCase() + name.slice(1), qty, unit, price };
+}
+
 const itemsOf = listId => state.shoppingItems.filter(i => i.listId === listId);
 const lineTotal = i => Number(i.price) || 0;
 const qtyLabel = i => (i.qty ? `${i.qty}${i.unit ? ` ${i.unit}` : ''}` : i.unit || '');
@@ -148,7 +217,8 @@ function openList(l0, redraw) {
         onClick: () => { m.close(); shopMode(l, redraw); } })));
 
     if (!its.length) {
-      m.body.append(h('div', { class: 'mt' }, empty('Empty list', 'Type above, or pick from your saved products.', 'cart')));
+      m.body.append(h('div', { class: 'mt' }, empty('Empty list',
+        'Type a line like “rice 1kg” above, or pick from your saved products.', 'cart')));
     } else {
       const rows = h('div', { class: 'mt' });
       its.forEach(i => rows.append(itemRow(i, l, drawBody)));
@@ -181,40 +251,69 @@ function openList(l0, redraw) {
 }
 
 /* ---------- quick add ----------
-   The fastest path in, matching how a shopping list is actually used: type,
-   press Enter, keep going. Qty and price are optional — an unpriced item is
-   still a valid reminder to buy something. */
-function quickAdd(l, after) {
-  const name = h('input', { class: 'inp', type: 'text', placeholder: 'Add things need to buy', style: { flex: 1, minWidth: '150px' } });
-  const qty = h('input', { class: 'inp num', type: 'number', min: '0', step: 'any', placeholder: 'Qty', style: { width: '76px' } });
-  const unit = h('select', { class: 'inp', style: { width: '104px' } },
-    h('option', { value: '' }, 'Unit'), ...UNITS.map(u => h('option', { value: u }, u)));
-  const price = h('input', { class: 'inp num', type: 'number', min: '0', step: 'any', placeholder: 'Price', style: { width: '96px' } });
+   ONE box, the way a list actually gets jotted down: "rice 1kg", "sugar 500g",
+   "milk 2". parseItem() pulls the quantity and unit out, so nobody has to tab
+   between three fields for every single line.
 
-  // A name you have bought before fills in its unit and last price by itself.
-  name.addEventListener('change', () => {
-    const p = productNamed(name.value);
-    if (!p) return;
-    if (!unit.value && p.unit) unit.value = p.unit;
-    if (!price.value && Number(p.price)) price.value = p.price;
-  });
+   The price is deliberately NOT filled in from the catalogue here. An item with
+   no price gets asked for at the shelf in Shop mode, and silently reusing an old
+   price would record a wrong number without anyone being asked. The last price
+   paid is shown under the box as information instead. */
+function quickAdd(l, after) {
+  const box = h('input', { class: 'inp', type: 'text', style: { flex: 1, minWidth: '170px' },
+    placeholder: 'Add things need to buy — e.g. rice 1kg' });
+  const hint = h('div', { class: 'tiny t3', style: { marginTop: '5px', minHeight: '17px' } });
+
+  const show = () => {
+    if (!box.value.trim()) {
+      hint.textContent = 'Quantity and unit are picked up automatically — kg, g, l, ml, pcs, dozen, pack, lb. Add @90 to set a price.';
+      return;
+    }
+    const it = parseItem(box.value);
+    const known = productNamed(it.name);
+    hint.textContent = [
+      it.name || '—',
+      it.qty ? `${it.qty}${it.unit ? ` ${it.unit}` : ''}` : (it.unit || null),
+      it.price ? fmtMoney(it.price) : null,
+      !it.price && known && Number(known.price) ? `last paid ${fmtMoney(known.price)}` : null,
+    ].filter(Boolean).join('   ·   ');
+  };
 
   const add = async () => {
-    const n = name.value.trim();
-    if (!n) { name.focus(); return; }
+    const it = parseItem(box.value);
+    if (!it.name) { box.focus(); return; }
+    const known = productNamed(it.name);
     await store.save('shoppingItems', {
-      listId: l.id, name: n, qty: Number(qty.value) || null,
-      unit: unit.value, price: Number(price.value) || 0, bought: false,
+      listId: l.id, name: it.name, qty: it.qty,
+      unit: it.unit || known?.unit || '',      // the catalogue already knows rice comes in kg
+      price: it.price || 0,
+      bought: false,
     });
-    [name, qty, unit, price].forEach(el => { el.value = ''; });
-    name.focus();
-    after();
+    box.value = ''; show(); box.focus(); after();
   };
-  [name, qty, price].forEach(el =>
-    el.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); add(); } }));
 
-  return h('div', { class: 'row wrap', style: { gap: '6px' } }, name, qty, unit, price,
-    h('button', { class: 'btn primary', html: icon('plus', 16), title: 'Add item', onClick: add }));
+  box.addEventListener('input', show);
+  box.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); add(); } });
+  show();
+
+  return h('div', {},
+    h('div', { class: 'row', style: { gap: '6px' } }, box,
+      h('button', { class: 'btn primary', html: icon('plus', 16), title: 'Add item', onClick: add })),
+    hint);
+}
+
+/** Setting or correcting a price mid-shop without leaving Shop mode. Keeps an
+    already recorded expense in step with the new number. */
+async function editPrice(i, after) {
+  const typed = await prompt({
+    title: i.name, label: `Price${qtyLabel(i) ? ` for ${qtyLabel(i)}` : ''}`,
+    type: 'number', value: lineTotal(i) || '', confirmText: 'Save',
+  });
+  if (typed === null) return;
+  const rec = await store.save('shoppingItems', { ...i, price: Number(typed) || 0 });
+  const t = rec.bought && rec.txnId ? store.find('transactions', rec.txnId) : null;
+  if (t && Number(t.amount) !== lineTotal(rec)) await store.save('transactions', { ...t, amount: lineTotal(rec) });
+  after();
 }
 
 /* ---------- one row ---------- */
@@ -466,9 +565,11 @@ function shopRow(i, l, after, redraw) {
     h('div', { style: { flex: 1, minWidth: 0 } },
       h('div', { class: 'ell', style: { fontSize: '1.03rem', fontWeight: 560, textDecoration: off ? 'line-through' : 'none' }, text: i.name }),
       h('div', { class: 'tiny t3', text: [qtyLabel(i), i.note].filter(Boolean).join(' · ') || 'no quantity set' })),
-    h('div', { style: { textAlign: 'right', flex: '0 0 auto' } },
+    h('div', { style: { textAlign: 'right', flex: '0 0 auto', cursor: 'pointer' },
+      title: 'Tap to set or correct the price',
+      onClick: async () => { await editPrice(i, after); redraw(); } },
       h('div', { class: 'num', style: { fontWeight: 660 }, text: lineTotal(i) ? fmtMoney(lineTotal(i)) : '—' }),
-      lineTotal(i) ? null : h('div', { class: 'tiny t3', text: 'asks on tap' })));
+      h('div', { class: 'tiny t3', text: lineTotal(i) ? 'tap to change' : 'asks on tap' })));
 }
 
 /* ═══════════ PRODUCTS ═══════════
