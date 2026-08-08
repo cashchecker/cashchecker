@@ -330,7 +330,7 @@ function quickAdd(l, after) {
     already recorded expense in step with the new number. */
 async function editPrice(i, after) {
   const typed = await prompt({
-    title: i.name, label: `Price${qtyLabel(i) ? ` for ${qtyLabel(i)}` : ''}`,
+    title: upperName(i.name), label: `Price${qtyLabel(i) ? ` for ${qtyLabel(i)}` : ''}`,
     type: 'number', value: lineTotal(i) || '', confirmText: 'Save',
   });
   if (typed === null) return;
@@ -349,7 +349,7 @@ function itemRow(i, l, after) {
       title: off ? 'Not bought after all' : 'Mark bought',
       onClick: async () => { await toggleBought(i, l); after(); } }),
     h('div', { style: { flex: 1, minWidth: 0 } },
-      h('div', { class: 'ell', style: off ? { textDecoration: 'line-through' } : null, text: i.name }),
+      h('div', { class: 'ell', style: off ? { textDecoration: 'line-through' } : null, text: upperName(i.name) }),
       (qtyLabel(i) || i.note)
         ? h('div', { class: 'tiny t3', text: [qtyLabel(i), i.note].filter(Boolean).join(' · ') })
         : null),
@@ -373,7 +373,7 @@ async function markBought(i, l, { askPrice = false } = {}) {
   // making someone leave Shop mode to go and edit the item.
   if (askPrice && !price) {
     const typed = await prompt({
-      title: i.name, label: `Price paid${qtyLabel(i) ? ` for ${qtyLabel(i)}` : ''}`,
+      title: upperName(i.name), label: `Price paid${qtyLabel(i) ? ` for ${qtyLabel(i)}` : ''}`,
       type: 'number', placeholder: '0', confirmText: 'Bought',
     });
     if (typed === null) return false;              // cancelled — leave it unbought
@@ -553,7 +553,7 @@ function bulkRows({ title, subtitle, submitText, startRows = 5, onRows }) {
     h('button', { class: 'btn', text: 'Cancel', onClick: () => m.close() }),
     h('button', { class: 'btn primary', text: submitText, onClick: async () => {
       const out = rows
-        .map(r => ({ name: parseItem(r.name.value).name || r.name.value.trim(),
+        .map(r => ({ name: parseItem(r.name.value).name || upperName(r.name.value),
           qty: Number(r.qty.value) || parseItem(r.name.value).qty || null,
           unit: r.unit.value || parseItem(r.name.value).unit || '' }))
         .filter(r => r.name);
@@ -611,7 +611,7 @@ function pasteIntoList(l, after) {
 /* ---------- editors ---------- */
 function editItem(i, l, after) {
   const { modal: m } = formModal({
-    title: `Edit ${i.name}`, size: '', columns: 2,
+    title: `Edit ${upperName(i.name)}`, size: '', columns: 2,
     values: { ...i, unit: canonUnit(i.unit) },
     fields: [
       { key: 'name', label: 'Item', type: 'text', required: true, col: 'full', placeholder: 'e.g. Sugar' },
@@ -662,7 +662,7 @@ function editList(l, redraw) {
 function itemsTable(redraw) {
   const nameOf = id => listOf(id)?.name || '—';
   return dataTable([
-    { key: 'name', label: 'Item', render: r => h('div', {}, h('b', { text: r.name }),
+    { key: 'name', label: 'Item', render: r => h('div', {}, h('b', { text: upperName(r.name) }),
       qtyLabel(r) ? h('div', { class: 'tiny t3', text: qtyLabel(r) }) : null) },
     { key: 'listId', label: 'List', value: r => nameOf(r.listId),
       render: r => h('span', { class: 'tiny t2', text: nameOf(r.listId) }) },
@@ -760,7 +760,7 @@ function shopRow(i, l, after, redraw) {
       onClick: async () => { await toggleBought(i, l, { askPrice: true }); after(); redraw(); },
     }),
     h('div', { style: { flex: 1, minWidth: 0 } },
-      h('div', { class: 'ell', style: { fontSize: '1.03rem', fontWeight: 560, textDecoration: off ? 'line-through' : 'none' }, text: i.name }),
+      h('div', { class: 'ell', style: { fontSize: '1.03rem', fontWeight: 560, textDecoration: off ? 'line-through' : 'none' }, text: upperName(i.name) }),
       h('div', { class: 'tiny t3', text: [qtyLabel(i), i.note].filter(Boolean).join(' · ') || 'no quantity set' })),
     h('div', { style: { textAlign: 'right', flex: '0 0 auto', cursor: 'pointer' },
       title: 'Tap to set or correct the price',
@@ -773,7 +773,7 @@ function shopRow(i, l, after, redraw) {
    The catalogue fills itself from what is actually bought — a typo you never buy
    never lands here, and the price stays current without anyone maintaining it. */
 async function rememberProduct(i, price) {
-  const name = String(i.name || '').trim();
+  const name = upperName(i.name);
   if (!name) return;
   const p = productNamed(name);
   await store.save('products', {
@@ -795,7 +795,7 @@ function productsPanel(redraw) {
     h('button', { class: 'btn primary sm', html: `${icon('plus', 15)} Add products`, onClick: () => addProducts(redraw) })));
 
   wrap.append(dataTable([
-    { key: 'name', label: 'Product', render: r => h('div', {}, h('b', { text: r.name }),
+    { key: 'name', label: 'Product', render: r => h('div', {}, h('b', { text: upperName(r.name) }),
       r.note ? h('div', { class: 'tiny t3', text: r.note }) : null) },
     { key: 'qty', label: 'Quantity', value: r => qtyLabel(r),
       render: r => (qtyLabel(r) ? tag(qtyLabel(r)) : '—') },
@@ -825,7 +825,7 @@ function productsPanel(redraw) {
 
 function editProduct(p, redraw) {
   const { modal: m } = formModal({
-    title: p ? `Edit ${p.name}` : 'New product', size: '', columns: 2,
+    title: p ? `Edit ${upperName(p.name)}` : 'New product', size: '', columns: 2,
     values: p ? { ...p, unit: canonUnit(p.unit) } : {},
     fields: [
       { key: 'name', label: 'Product name', type: 'text', required: true, col: 'full',
@@ -862,7 +862,7 @@ function addToList(p, redraw) {
   const open = state.shoppingLists.filter(l => l.status !== 'done');
   if (!open.length) { toast('No active list — make one first', 'warn'); return; }
   const { modal: m } = formModal({
-    title: `Add ${p.name}`, size: '', columns: 2,
+    title: `Add ${upperName(p.name)}`, size: '', columns: 2,
     values: { listId: open[0].id, qty: p.qty || 1, unit: canonUnit(p.unit), price: 0 },
     fields: [
       { key: 'listId', label: 'To list', type: 'select', options: open.map(l => [l.id, l.name]), required: true, col: 'full' },
@@ -873,7 +873,7 @@ function addToList(p, redraw) {
     onSubmit: async v => {
       await store.save('shoppingItems', { listId: v.listId, name: p.name, qty: Number(v.qty) || null,
         unit: v.unit || '', price: Number(v.price) || 0, bought: false });
-      m.close(); toast(`${p.name} added`, 'ok'); redraw();
+      m.close(); toast(`${upperName(p.name)} added`, 'ok'); redraw();
     },
   });
 }
@@ -910,7 +910,7 @@ function pickProducts(l, after) {
         added++; paint(); after();
       } },
       h('div', { style: { flex: 1, minWidth: 0 } },
-        h('div', { class: 'ell', text: p.name }),
+        h('div', { class: 'ell', text: upperName(p.name) }),
         h('div', { class: 'tiny t3', text: p.timesBought ? `bought ${p.timesBought}×` : 'not bought yet' })),
       h('span', { class: 'num t2', text: qtyLabel(p) || '—' }),
       h('span', { class: 'btn xs primary', html: icon('plus', 13) }))));
