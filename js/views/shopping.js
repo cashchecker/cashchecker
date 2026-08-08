@@ -583,7 +583,8 @@ async function rememberProduct(i, price) {
     ...(p || {}),
     name,
     unit: i.unit || p?.unit || '',
-    price: price || Number(p?.price) || 0,
+    qty: i.qty || p?.qty || null,
+    price: price || Number(p?.price) || 0,   // kept for the "last paid" hint, not shown as a product field
     timesBought: (p?.timesBought || 0) + 1,
     lastBoughtAt: today(),
   }, { silent: true, auditIt: false });
@@ -593,15 +594,14 @@ function productsPanel(redraw) {
   const wrap = h('div', {});
   wrap.append(h('div', { class: 'row between wrap mb', style: { gap: '8px' } },
     h('div', { style: { minWidth: 0 } }, h('b', { text: 'Product catalogue' }),
-      h('div', { class: 'tiny t3', text: 'What you buy, with its unit and last price. Pick from here instead of retyping.' })),
+      h('div', { class: 'tiny t3', text: 'What you buy and how much of it. Pick from here instead of retyping every time.' })),
     h('button', { class: 'btn primary sm', html: `${icon('plus', 15)} New product`, onClick: () => editProduct(null, redraw) })));
 
   wrap.append(dataTable([
     { key: 'name', label: 'Product', render: r => h('div', {}, h('b', { text: r.name }),
       r.note ? h('div', { class: 'tiny t3', text: r.note }) : null) },
-    { key: 'unit', label: 'Unit', render: r => (r.unit ? tag(r.unit) : '—') },
-    { key: 'price', label: 'Last price', align: 'right',
-      render: r => h('span', { class: 'num', text: Number(r.price) ? fmtMoney(r.price) : '—' }) },
+    { key: 'qty', label: 'Quantity', value: r => qtyLabel(r),
+      render: r => (qtyLabel(r) ? tag(qtyLabel(r)) : '—') },
     { key: 'timesBought', label: 'Bought', align: 'right',
       render: r => h('span', { class: 'num t2', text: String(r.timesBought || 0) }) },
     { key: 'lastBoughtAt', label: 'Last bought', render: r => (r.lastBoughtAt ? fmtDate(r.lastBoughtAt) : '—') },
@@ -609,7 +609,7 @@ function productsPanel(redraw) {
     rows: state.products, pageSize: 25, exportName: 'products',
     searchFields: ['name', 'unit', 'note'],
     emptyTitle: 'No products yet',
-    emptyMsg: 'Add what you buy often — or just shop, and anything you tick off is remembered here by itself.',
+    emptyMsg: 'Add what you buy often — type a line like “rice 1kg”. Anything you tick off while shopping is remembered here by itself.',
     emptyIcon: 'tag',
     onRowClick: p => editProduct(p, redraw),
     actions: p => [
@@ -631,9 +631,10 @@ function editProduct(p, redraw) {
     title: p ? `Edit ${p.name}` : 'New product', size: '', columns: 2,
     values: p || {},
     fields: [
-      { key: 'name', label: 'Product name', type: 'text', required: true, col: 'full', placeholder: 'e.g. Sugar, Milk, Rice' },
+      { key: 'name', label: 'Product name', type: 'text', required: true, col: 'full',
+        placeholder: 'e.g. rice 1kg, sugar 500g, milk 2', hint: 'Type the quantity with the name — it is split out for you.' },
+      { key: 'qty', label: 'Quantity', type: 'number', min: 0, step: 'any' },
       { key: 'unit', label: 'Unit', type: 'select', options: UNITS, placeholder: 'No unit' },
-      { key: 'price', label: 'Usual price', type: 'money' },
       { key: 'note', label: 'Note', type: 'text', col: 'full', placeholder: 'Brand, shop, size…' },
     ],
     extraFooter: p ? h('button', { class: 'btn danger', html: icon('trash', 15), title: 'Delete product', onClick: async () => {
@@ -641,11 +642,19 @@ function editProduct(p, redraw) {
       await store.remove('products', p.id); m.close(); redraw();
     } }) : null,
     onSubmit: async v => {
-      // Two rows for the same thing would split its price history and show up
-      // twice in the picker, so refuse the duplicate instead of merging blindly.
-      const dup = productNamed(v.name);
+      // The name box accepts a whole line, same as a shopping list does, so
+      // "rice 1kg" typed here lands as Rice / 1 / kg rather than a product
+      // literally called "rice 1kg". Anything typed in the fields below wins.
+      const parsed = parseItem(v.name);
+      const name = parsed.name || String(v.name || '').trim();
+      if (!name) { toast('Give the product a name', 'warn'); return; }
+      // Two rows for the same thing show up twice in the picker, so refuse the
+      // duplicate instead of merging blindly.
+      const dup = productNamed(name);
       if (dup && dup.id !== p?.id) { toast(`“${dup.name}” is already in your products`, 'warn'); return; }
-      await store.save('products', { ...(p || {}), ...v });
+      await store.save('products', { ...(p || {}), ...v, name,
+        qty: Number(v.qty) || parsed.qty || null,
+        unit: v.unit || parsed.unit || '' });
       m.close(); redraw();
     },
   });
@@ -657,7 +666,7 @@ function addToList(p, redraw) {
   if (!open.length) { toast('No active list — make one first', 'warn'); return; }
   const { modal: m } = formModal({
     title: `Add ${p.name}`, size: '', columns: 2,
-    values: { listId: open[0].id, qty: 1, unit: p.unit || '', price: Number(p.price) || 0 },
+    values: { listId: open[0].id, qty: p.qty || 1, unit: p.unit || '', price: 0 },
     fields: [
       { key: 'listId', label: 'To list', type: 'select', options: open.map(l => [l.id, l.name]), required: true, col: 'full' },
       { key: 'qty', label: 'Quantity', type: 'number', min: 0, step: 'any' },
@@ -699,15 +708,14 @@ function pickProducts(l, after) {
     rows.slice(0, 60).forEach(p => rowsEl.append(h('div', { class: 'row between', style: {
       gap: '10px', padding: '10px 2px', borderBottom: '1px solid var(--border)', cursor: 'pointer' },
       onClick: async () => {
-        await store.save('shoppingItems', { listId: l.id, name: p.name, qty: 1,
-          unit: p.unit || '', price: Number(p.price) || 0, bought: false });
+        await store.save('shoppingItems', { listId: l.id, name: p.name, qty: p.qty || 1,
+          unit: p.unit || '', price: 0, bought: false });   // price is asked at the shelf
         added++; paint(); after();
       } },
       h('div', { style: { flex: 1, minWidth: 0 } },
         h('div', { class: 'ell', text: p.name }),
-        h('div', { class: 'tiny t3', text: [p.unit, p.timesBought ? `bought ${p.timesBought}×` : null]
-          .filter(Boolean).join(' · ') || 'not bought yet' })),
-      h('span', { class: 'num t2', text: Number(p.price) ? fmtMoney(p.price) : '—' }),
+        h('div', { class: 'tiny t3', text: p.timesBought ? `bought ${p.timesBought}×` : 'not bought yet' })),
+      h('span', { class: 'num t2', text: qtyLabel(p) || '—' }),
       h('span', { class: 'btn xs primary', html: icon('plus', 13) }))));
   };
 
