@@ -1,12 +1,22 @@
 /* ═══════════ views/shopping.js — Shopping Lists ═══════════
-   A list is one shopping trip; its items are the things to buy. Ticking an item
-   off records it as an expense straight away, so a shop run reaches the tracker
-   without anyone re-typing it. Unticking deletes that expense again — a mis-tap
-   should not leave a phantom transaction behind.
+   Three things live here, and they exist for one reason: the list has to be
+   usable while STANDING IN THE SHOP, not just while planning at home.
+
+   1. Lists & items — a list is one shopping trip. Ticking an item off records it
+      as an expense straight away; unticking deletes that expense again, so a
+      mis-tap cannot leave a phantom transaction behind.
+
+   2. Products — a saved catalogue of what you buy, with its unit and last price.
+      Adding "Sugar 1 kg" for the fifth time should be two taps, not retyping.
+      The catalogue fills itself: anything you actually buy is remembered, so it
+      gets more useful the more it is used, with nobody maintaining it.
+
+   3. Shop mode — big rows, one tap per item, a running trolley total. Tapping an
+      unpriced item asks for its price there and then, because the shelf is
+      exactly where that number becomes known.
 
    The paying account and expense category live on the LIST, not on each item:
-   they are asked for once, saved, and reused for every tick after that. That is
-   what makes "tick = expense" automatic rather than a form every time.
+   asked once, saved, reused for every tick after that.
    ═══════════════════════════════════════════════════════════ */
 
 import {
@@ -14,20 +24,27 @@ import {
   fmtMoney, fmtDate, today, sortBy, money, monthKey, bar, pageHead, kpiGrid, confirmDelete,
   categoryOptions, accountOptions,
 } from './common.js';
-import { dataTable } from '../ui.js';
+import { dataTable, prompt } from '../ui.js';
+
+/** Units people actually shop in. Free text invited kg / Kg / KG and made the
+    catalogue unmatchable, so this is a fixed list. Blank is allowed. */
+export const UNITS = ['pcs', 'kg', 'g', 'l', 'ml', 'pack', 'packet', 'box', 'bag',
+  'bottle', 'can', 'tin', 'dozen', 'bunch', 'block', 'tray', 'lb', 'oz'];
 
 const itemsOf = listId => state.shoppingItems.filter(i => i.listId === listId);
 const lineTotal = i => Number(i.price) || 0;
 const qtyLabel = i => (i.qty ? `${i.qty}${i.unit ? ` ${i.unit}` : ''}` : i.unit || '');
 const listOf = id => store.find('shoppingLists', id);
 const sumOf = rows => money(rows.reduce((a, i) => a + lineTotal(i), 0));
+const norm = s => String(s || '').trim().toLowerCase();
+const productNamed = name => state.products.find(p => norm(p.name) === norm(name));
 
 export async function render(root, api) {
   let tab = 'active';
   const draw = () => { root.innerHTML = ''; root.append(build(tab, t => { tab = t; draw(); }, draw, api)); };
   draw();
   return store.bus.on('change', ({ store: s }) => {
-    if (['shoppingLists', 'shoppingItems', 'transactions'].includes(s)) draw();
+    if (['shoppingLists', 'shoppingItems', 'products', 'transactions'].includes(s)) draw();
   });
 }
 
@@ -45,7 +62,7 @@ function build(tab, setTab, redraw, api) {
   api.setSubtitle(`${active.length} active · ${pending.length} to buy`);
 
   wrap.append(pageHead('Shopping Lists',
-    'Tick an item off and it is recorded as an expense on the spot.',
+    'Take the list to the shop and tap each thing off as it goes in the trolley.',
     h('button', { class: 'btn primary', html: `${icon('plus', 16)} New list`, onClick: () => editList(null, redraw) })));
 
   wrap.append(kpiGrid(
@@ -55,16 +72,19 @@ function build(tab, setTab, redraw, api) {
       foot: h('span', { class: 't3', text: 'Across active lists' }) }),
     stat({ label: 'Still to spend', value: fmtMoney(sumOf(pending)), icon: 'wallet',
       foot: h('span', { class: 't3', text: 'Priced items only' }) }),
+    stat({ label: 'Saved products', value: String(state.products.length), icon: 'tag',
+      foot: h('span', { class: 't3', text: 'Reusable catalogue' }) }),
     stat({ label: 'Shopping this month', value: fmtMoney(spentThisMonth), icon: 'trend',
       foot: h('span', { class: 't3', text: fmtDate(today(), 'mon') }) })));
 
   const tabsEl = h('div', { class: 'tabs mt' });
-  [['active', 'Active'], ['done', 'Completed'], ['items', 'All items']]
+  [['active', 'Active'], ['done', 'Completed'], ['products', 'Products'], ['items', 'All items']]
     .forEach(([v, l]) => tabsEl.append(h('button', { class: v === tab ? 'on' : '', text: l, onClick: () => setTab(v) })));
   wrap.append(tabsEl);
   const body = h('div', { class: 'mt' });
   wrap.append(body);
 
+  if (tab === 'products') { body.append(productsPanel(redraw)); return wrap; }
   if (tab === 'items') { body.append(itemsTable(redraw)); return wrap; }
 
   const rows = tab === 'active' ? active : lists.filter(l => l.status === 'done');
@@ -89,7 +109,7 @@ function listCard(l, redraw) {
   const done = l.status === 'done';
 
   return h('div', { class: 'card pad', style: { cursor: 'pointer', borderLeft: `3px solid ${done ? 'var(--pos)' : 'var(--accent)'}` },
-    onClick: () => openList(l, redraw) },
+    onClick: () => (done ? openList(l, redraw) : shopMode(l, redraw)) },
     h('div', { class: 'row between mb' },
       h('div', { style: { minWidth: 0 } },
         h('b', { class: 'ell', text: l.name }),
@@ -100,14 +120,16 @@ function listCard(l, redraw) {
       h('span', { class: 'num', style: { fontWeight: 650 }, text: fmtMoney(sumOf(bought)) }),
       left.length ? h('span', { class: 'tiny t3', text: `${fmtMoney(sumOf(left))} left` }) : null),
     h('div', { class: 'row', style: { gap: '6px', marginTop: '9px' } },
-      h('button', { class: 'btn xs primary', text: 'Open', onClick: e => { e.stopPropagation(); openList(l, redraw); } }),
+      done ? null : h('button', { class: 'btn xs primary', html: `${icon('cart', 14)} Shop`,
+        onClick: e => { e.stopPropagation(); shopMode(l, redraw); } }),
+      h('button', { class: 'btn xs', text: 'Items', onClick: e => { e.stopPropagation(); openList(l, redraw); } }),
       h('button', { class: 'btn xs', html: icon('edit', 14), title: 'Edit list',
         onClick: e => { e.stopPropagation(); editList(l, redraw); } })));
 }
 
 /* ---------- the list itself ---------- */
 function openList(l0, redraw) {
-  const m = modal({ title: l0.name, subtitle: l0.note || 'Tap the tick to mark an item bought', size: 'wide' });
+  const m = modal({ title: l0.name, subtitle: l0.note || 'Everything on this list', size: 'wide' });
 
   const drawBody = () => {
     // Re-read every time: ticking an item touches the list too (the account and
@@ -120,8 +142,13 @@ function openList(l0, redraw) {
 
     m.body.innerHTML = '';
     m.body.append(quickAdd(l, drawBody));
+    m.body.append(h('div', { class: 'row wrap', style: { gap: '6px', marginTop: '8px' } },
+      h('button', { class: 'btn sm', html: `${icon('tag', 14)} Add from products`, onClick: () => pickProducts(l, drawBody) }),
+      l.status === 'done' ? null : h('button', { class: 'btn sm', html: `${icon('cart', 14)} Shop mode`,
+        onClick: () => { m.close(); shopMode(l, redraw); } })));
+
     if (!its.length) {
-      m.body.append(h('div', { class: 'mt' }, empty('Empty list', 'Add the first thing you need to buy above.', 'cart')));
+      m.body.append(h('div', { class: 'mt' }, empty('Empty list', 'Type above, or pick from your saved products.', 'cart')));
     } else {
       const rows = h('div', { class: 'mt' });
       its.forEach(i => rows.append(itemRow(i, l, drawBody)));
@@ -160,21 +187,30 @@ function openList(l0, redraw) {
 function quickAdd(l, after) {
   const name = h('input', { class: 'inp', type: 'text', placeholder: 'Add things need to buy', style: { flex: 1, minWidth: '150px' } });
   const qty = h('input', { class: 'inp num', type: 'number', min: '0', step: 'any', placeholder: 'Qty', style: { width: '76px' } });
-  const unit = h('input', { class: 'inp', type: 'text', placeholder: 'Unit', style: { width: '88px' } });
-  const price = h('input', { class: 'inp num', type: 'number', min: '0', step: 'any', placeholder: 'Price', style: { width: '100px' } });
+  const unit = h('select', { class: 'inp', style: { width: '104px' } },
+    h('option', { value: '' }, 'Unit'), ...UNITS.map(u => h('option', { value: u }, u)));
+  const price = h('input', { class: 'inp num', type: 'number', min: '0', step: 'any', placeholder: 'Price', style: { width: '96px' } });
+
+  // A name you have bought before fills in its unit and last price by itself.
+  name.addEventListener('change', () => {
+    const p = productNamed(name.value);
+    if (!p) return;
+    if (!unit.value && p.unit) unit.value = p.unit;
+    if (!price.value && Number(p.price)) price.value = p.price;
+  });
 
   const add = async () => {
     const n = name.value.trim();
     if (!n) { name.focus(); return; }
     await store.save('shoppingItems', {
       listId: l.id, name: n, qty: Number(qty.value) || null,
-      unit: unit.value.trim(), price: Number(price.value) || 0, bought: false,
+      unit: unit.value, price: Number(price.value) || 0, bought: false,
     });
     [name, qty, unit, price].forEach(el => { el.value = ''; });
     name.focus();
     after();
   };
-  [name, qty, unit, price].forEach(el =>
+  [name, qty, price].forEach(el =>
     el.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); add(); } }));
 
   return h('div', { class: 'row wrap', style: { gap: '6px' } }, name, qty, unit, price,
@@ -207,8 +243,21 @@ function itemRow(i, l, after) {
 
 /* ---------- tick / untick ---------- */
 /** Records the expense and marks the item. Returns false if the user backed out. */
-async function markBought(i, l) {
-  const price = lineTotal(i);
+async function markBought(i, l, { askPrice = false } = {}) {
+  let price = lineTotal(i);
+
+  // The shelf is where the price becomes known, so ask for it there rather than
+  // making someone leave Shop mode to go and edit the item.
+  if (askPrice && !price) {
+    const typed = await prompt({
+      title: i.name, label: `Price paid${qtyLabel(i) ? ` for ${qtyLabel(i)}` : ''}`,
+      type: 'number', placeholder: '0', confirmText: 'Bought',
+    });
+    if (typed === null) return false;              // cancelled — leave it unbought
+    price = Number(typed) || 0;
+    if (price) i = await store.save('shoppingItems', { ...i, price });
+  }
+
   let txnId = null;
   if (price > 0) {
     const dest = await ensureDestination(l);
@@ -222,17 +271,20 @@ async function markBought(i, l) {
     txnId = t.id;
   }
   await store.save('shoppingItems', { ...i, bought: true, boughtAt: today(), txnId });
+  await rememberProduct(i, price);
   return true;
 }
 
-async function toggleBought(i, l) {
+async function toggleBought(i, l, opts) {
   if (i.bought) {
     if (i.txnId && store.find('transactions', i.txnId)) await store.remove('transactions', i.txnId);
     await store.save('shoppingItems', { ...i, bought: false, boughtAt: null, txnId: null });
     return;
   }
-  const ok = await markBought(i, l);
-  if (ok && lineTotal(i) > 0) toast(`${fmtMoney(lineTotal(i))} recorded as an expense`, 'ok');
+  const ok = await markBought(i, l, opts);
+  if (!ok) return;
+  const paid = lineTotal(store.find('shoppingItems', i.id) || i);
+  if (paid > 0) toast(`${fmtMoney(paid)} recorded as an expense`, 'ok');
 }
 
 /** Account + category for this list. Asked once, then remembered on the list. */
@@ -268,7 +320,7 @@ function editItem(i, l, after) {
     fields: [
       { key: 'name', label: 'Item', type: 'text', required: true, col: 'full', placeholder: 'e.g. Sugar' },
       { key: 'qty', label: 'Quantity', type: 'number', min: 0, step: 'any' },
-      { key: 'unit', label: 'Unit', type: 'text', placeholder: 'kg, pack, block…' },
+      { key: 'unit', label: 'Unit', type: 'select', options: UNITS, placeholder: 'No unit' },
       { key: 'price', label: 'Price', type: 'money', col: 'full' },
       { key: 'note', label: 'Note', type: 'text', col: 'full' },
     ],
@@ -318,6 +370,7 @@ function itemsTable(redraw) {
       qtyLabel(r) ? h('div', { class: 'tiny t3', text: qtyLabel(r) }) : null) },
     { key: 'listId', label: 'List', value: r => nameOf(r.listId),
       render: r => h('span', { class: 'tiny t2', text: nameOf(r.listId) }) },
+    { key: 'unit', label: 'Unit', render: r => (r.unit ? tag(r.unit) : '—') },
     { key: 'price', label: 'Price', align: 'right',
       render: r => h('span', { class: 'num', text: lineTotal(r) ? fmtMoney(lineTotal(r)) : '—' }) },
     { key: 'bought', label: 'Status', value: r => (r.bought ? 'Bought' : 'To buy'),
@@ -341,8 +394,225 @@ function itemsTable(redraw) {
     ],
     footRow: data => h('tr', {},
       h('td', { class: 't3', text: `${data.length} items` }),
-      h('td', {}),
+      h('td', {}), h('td', {}),
       h('td', { class: 'right num', text: fmtMoney(sumOf(data)) }),
       h('td', { colspan: 2 })),
   }).el;
+}
+
+/* ═══════════ SHOP MODE ═══════════
+   What you hold in your hand in the aisle. Deliberately sparse: no tables, no
+   editing, nothing to mis-tap. One big row per thing, one tap = in the trolley.
+   Unbought stay on top so the list shrinks towards nothing as you go. */
+function shopMode(l0, redraw) {
+  const m = modal({ title: l0.name, subtitle: 'Tap an item as it goes in the trolley', size: 'wide' });
+
+  const drawBody = () => {
+    const l = listOf(l0.id) || l0;
+    const its = itemsOf(l.id);
+    const left = its.filter(i => !i.bought).sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+    const got = its.filter(i => i.bought).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+
+    m.body.innerHTML = '';
+
+    if (!its.length) {
+      m.body.append(empty('Nothing on this list', 'Add what you need before heading out.', 'cart',
+        h('button', { class: 'btn primary sm mt', onClick: () => { m.close(); openList(l, redraw); } }, 'Add items')));
+    }
+
+    if (left.length) {
+      m.body.append(h('div', { class: 'nav-group', text: `To buy — ${left.length}` }));
+      left.forEach(i => m.body.append(shopRow(i, l, drawBody, redraw)));
+    } else if (its.length) {
+      m.body.append(h('div', { class: 'card pad', style: { textAlign: 'center' } },
+        h('b', { text: 'Everything on the list is in the trolley' }),
+        h('div', { class: 'tiny t3', style: { marginTop: '4px' }, text: 'Complete the list below to close it off.' })));
+    }
+
+    if (got.length) {
+      m.body.append(h('div', { class: 'nav-group', style: { marginTop: '14px' }, text: `In the trolley — ${got.length}` }));
+      got.forEach(i => m.body.append(shopRow(i, l, drawBody, redraw)));
+    }
+
+    m.setFooter(frag(
+      h('div', { style: { flex: 1, minWidth: 0 } },
+        h('div', { class: 'num', style: { fontWeight: 700, fontSize: '1.15rem' }, text: fmtMoney(sumOf(got)) }),
+        h('div', { class: 'tiny t3', text: left.length
+          ? `${left.length} still to get · ${fmtMoney(sumOf(left))} estimated`
+          : 'Nothing left to get' })),
+      h('button', { class: 'btn', text: 'Edit items', onClick: () => { m.close(); openList(l, redraw); } }),
+      left.length ? null : h('button', { class: 'btn primary', text: 'Complete list', onClick: async () => {
+        await store.save('shoppingLists', { ...(listOf(l.id) || l), status: 'done' });
+        toast('List completed', 'ok'); m.close(); redraw();
+      } })));
+  };
+
+  drawBody();
+}
+
+/** One big, thumb-sized row — 46px tap target, no small controls beside it. */
+function shopRow(i, l, after, redraw) {
+  const off = !!i.bought;
+  return h('div', { class: 'row', style: {
+    gap: '12px', alignItems: 'center', padding: '12px 4px',
+    borderBottom: '1px solid var(--border)', opacity: off ? '.55' : '1' } },
+    h('button', {
+      class: `btn ${off ? 'pos' : ''}`,
+      style: { width: '46px', height: '46px', padding: '0', display: 'grid', placeItems: 'center', flex: '0 0 auto' },
+      title: off ? 'Take it back out' : 'Into the trolley',
+      html: icon('check', 22),
+      onClick: async () => { await toggleBought(i, l, { askPrice: true }); after(); redraw(); },
+    }),
+    h('div', { style: { flex: 1, minWidth: 0 } },
+      h('div', { class: 'ell', style: { fontSize: '1.03rem', fontWeight: 560, textDecoration: off ? 'line-through' : 'none' }, text: i.name }),
+      h('div', { class: 'tiny t3', text: [qtyLabel(i), i.note].filter(Boolean).join(' · ') || 'no quantity set' })),
+    h('div', { style: { textAlign: 'right', flex: '0 0 auto' } },
+      h('div', { class: 'num', style: { fontWeight: 660 }, text: lineTotal(i) ? fmtMoney(lineTotal(i)) : '—' }),
+      lineTotal(i) ? null : h('div', { class: 'tiny t3', text: 'asks on tap' })));
+}
+
+/* ═══════════ PRODUCTS ═══════════
+   The catalogue fills itself from what is actually bought — a typo you never buy
+   never lands here, and the price stays current without anyone maintaining it. */
+async function rememberProduct(i, price) {
+  const name = String(i.name || '').trim();
+  if (!name) return;
+  const p = productNamed(name);
+  await store.save('products', {
+    ...(p || {}),
+    name,
+    unit: i.unit || p?.unit || '',
+    price: price || Number(p?.price) || 0,
+    timesBought: (p?.timesBought || 0) + 1,
+    lastBoughtAt: today(),
+  }, { silent: true, auditIt: false });
+}
+
+function productsPanel(redraw) {
+  const wrap = h('div', {});
+  wrap.append(h('div', { class: 'row between wrap mb', style: { gap: '8px' } },
+    h('div', { style: { minWidth: 0 } }, h('b', { text: 'Product catalogue' }),
+      h('div', { class: 'tiny t3', text: 'What you buy, with its unit and last price. Pick from here instead of retyping.' })),
+    h('button', { class: 'btn primary sm', html: `${icon('plus', 15)} New product`, onClick: () => editProduct(null, redraw) })));
+
+  wrap.append(dataTable([
+    { key: 'name', label: 'Product', render: r => h('div', {}, h('b', { text: r.name }),
+      r.note ? h('div', { class: 'tiny t3', text: r.note }) : null) },
+    { key: 'unit', label: 'Unit', render: r => (r.unit ? tag(r.unit) : '—') },
+    { key: 'price', label: 'Last price', align: 'right',
+      render: r => h('span', { class: 'num', text: Number(r.price) ? fmtMoney(r.price) : '—' }) },
+    { key: 'timesBought', label: 'Bought', align: 'right',
+      render: r => h('span', { class: 'num t2', text: String(r.timesBought || 0) }) },
+    { key: 'lastBoughtAt', label: 'Last bought', render: r => (r.lastBoughtAt ? fmtDate(r.lastBoughtAt) : '—') },
+  ], {
+    rows: state.products, pageSize: 25, exportName: 'products',
+    searchFields: ['name', 'unit', 'note'],
+    emptyTitle: 'No products yet',
+    emptyMsg: 'Add what you buy often — or just shop, and anything you tick off is remembered here by itself.',
+    emptyIcon: 'tag',
+    onRowClick: p => editProduct(p, redraw),
+    actions: p => [
+      { label: 'Add to a list', icon: 'plus', onClick: () => addToList(p, redraw) },
+      { label: 'Edit', icon: 'edit', onClick: () => editProduct(p, redraw) },
+      '-',
+      { label: 'Delete', icon: 'trash', danger: true, onClick: async () => {
+        if (await confirmDelete(p.name, 'Lists already using it are not affected.')) {
+          await store.remove('products', p.id); redraw();
+        }
+      } },
+    ],
+  }).el);
+  return wrap;
+}
+
+function editProduct(p, redraw) {
+  const { modal: m } = formModal({
+    title: p ? `Edit ${p.name}` : 'New product', size: '', columns: 2,
+    values: p || {},
+    fields: [
+      { key: 'name', label: 'Product name', type: 'text', required: true, col: 'full', placeholder: 'e.g. Sugar, Milk, Rice' },
+      { key: 'unit', label: 'Unit', type: 'select', options: UNITS, placeholder: 'No unit' },
+      { key: 'price', label: 'Usual price', type: 'money' },
+      { key: 'note', label: 'Note', type: 'text', col: 'full', placeholder: 'Brand, shop, size…' },
+    ],
+    extraFooter: p ? h('button', { class: 'btn danger', html: icon('trash', 15), title: 'Delete product', onClick: async () => {
+      if (!(await confirmDelete(p.name, 'Lists already using it are not affected.'))) return;
+      await store.remove('products', p.id); m.close(); redraw();
+    } }) : null,
+    onSubmit: async v => {
+      // Two rows for the same thing would split its price history and show up
+      // twice in the picker, so refuse the duplicate instead of merging blindly.
+      const dup = productNamed(v.name);
+      if (dup && dup.id !== p?.id) { toast(`“${dup.name}” is already in your products`, 'warn'); return; }
+      await store.save('products', { ...(p || {}), ...v });
+      m.close(); redraw();
+    },
+  });
+}
+
+/** Put one product onto whichever open list you choose. */
+function addToList(p, redraw) {
+  const open = state.shoppingLists.filter(l => l.status !== 'done');
+  if (!open.length) { toast('No active list — make one first', 'warn'); return; }
+  const { modal: m } = formModal({
+    title: `Add ${p.name}`, size: '', columns: 2,
+    values: { listId: open[0].id, qty: 1, unit: p.unit || '', price: Number(p.price) || 0 },
+    fields: [
+      { key: 'listId', label: 'To list', type: 'select', options: open.map(l => [l.id, l.name]), required: true, col: 'full' },
+      { key: 'qty', label: 'Quantity', type: 'number', min: 0, step: 'any' },
+      { key: 'unit', label: 'Unit', type: 'select', options: UNITS, placeholder: 'No unit' },
+      { key: 'price', label: 'Price', type: 'money', col: 'full' },
+    ],
+    onSubmit: async v => {
+      await store.save('shoppingItems', { listId: v.listId, name: p.name, qty: Number(v.qty) || null,
+        unit: v.unit || '', price: Number(v.price) || 0, bought: false });
+      m.close(); toast(`${p.name} added`, 'ok'); redraw();
+    },
+  });
+}
+
+/** Multi-add straight from the catalogue — the two-tap path. Most-bought first,
+    and anything already on the list is hidden so it cannot be added twice. */
+function pickProducts(l, after) {
+  const m = modal({ title: 'Add from products', subtitle: `Onto “${l.name}” — tap to add`, size: '' });
+  const q = h('input', { class: 'inp', type: 'text', placeholder: 'Search products…' });
+  const rowsEl = h('div', { class: 'mt' });
+  let added = 0;
+
+  const paint = () => {
+    const term = norm(q.value);
+    const onList = new Set(itemsOf(l.id).map(i => norm(i.name)));
+    const rows = sortBy(state.products.filter(p =>
+      !onList.has(norm(p.name)) && (!term || norm(p.name).includes(term))), p => -(p.timesBought || 0));
+
+    rowsEl.innerHTML = '';
+    if (!state.products.length) {
+      rowsEl.append(empty('No saved products', 'Anything you tick off while shopping is remembered here automatically.', 'tag'));
+      return;
+    }
+    if (!rows.length) {
+      rowsEl.append(h('p', { class: 't3', style: { fontSize: '.86rem', padding: '10px 2px' },
+        text: term ? 'Nothing matches that.' : 'Everything in your catalogue is already on this list.' }));
+      return;
+    }
+    rows.slice(0, 60).forEach(p => rowsEl.append(h('div', { class: 'row between', style: {
+      gap: '10px', padding: '10px 2px', borderBottom: '1px solid var(--border)', cursor: 'pointer' },
+      onClick: async () => {
+        await store.save('shoppingItems', { listId: l.id, name: p.name, qty: 1,
+          unit: p.unit || '', price: Number(p.price) || 0, bought: false });
+        added++; paint(); after();
+      } },
+      h('div', { style: { flex: 1, minWidth: 0 } },
+        h('div', { class: 'ell', text: p.name }),
+        h('div', { class: 'tiny t3', text: [p.unit, p.timesBought ? `bought ${p.timesBought}×` : null]
+          .filter(Boolean).join(' · ') || 'not bought yet' })),
+      h('span', { class: 'num t2', text: Number(p.price) ? fmtMoney(p.price) : '—' }),
+      h('span', { class: 'btn xs primary', html: icon('plus', 13) }))));
+  };
+
+  q.addEventListener('input', paint);
+  m.body.append(q, rowsEl);
+  m.setFooter(frag(h('div', { class: 'spacer' }),
+    h('button', { class: 'btn primary', text: 'Done', onClick: () => { m.close(); if (added) toast(`${added} added`, 'ok'); } })));
+  paint();
 }
