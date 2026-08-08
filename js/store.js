@@ -254,6 +254,7 @@ async function cascadeDelete(store, id) {
     campaigns: [['campaignDays', 'campaignId']],
     loans: [['loanPayments', 'loanId']],
     entityTypes: [['entityRecords', 'typeId']],
+    shoppingLists: [['shoppingItems', 'listId']],
   }[store];
   if (!kids) return;
   for (const [child, key] of kids) {
@@ -703,6 +704,11 @@ export async function pushNotification(n) {
   return row;
 }
 export const unreadCount = () => state.notifications.filter(n => !n.read).length;
+/** Things still to buy on lists that are still open — the Shopping nav badge. */
+export const shoppingPending = () => {
+  const open = new Set(state.shoppingLists.filter(l => l.status !== 'done').map(l => l.id));
+  return state.shoppingItems.filter(i => !i.bought && open.has(i.listId)).length;
+};
 export async function markAllRead() {
   const un = state.notifications.filter(n => !n.read);
   un.forEach(n => { n.read = 1; });

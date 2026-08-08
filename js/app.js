@@ -13,6 +13,7 @@ import { openTxnModal, currentPageAction, clearPageAction } from './views/common
 const ROUTES = [
   { path: 'dashboard',     label: 'Dashboard',           icon: 'home',     load: () => import('./views/dashboard.js') },
   { path: 'tracker',       label: 'Financial Tracker',   icon: 'swap',     load: () => import('./views/tracker.js') },
+  { path: 'shopping',      label: 'Shopping List',       icon: 'cart',     load: () => import('./views/shopping.js') },
   { path: 'credit',        label: 'Credit Book',         icon: 'book',     load: () => import('./views/credit.js') },
   { path: 'investments',   label: 'Investments',         icon: 'trend',    load: () => import('./views/investments.js') },
   { path: 'marketing',     label: 'Marketing',           icon: 'mega',     load: () => import('./views/marketing.js') },
@@ -50,7 +51,7 @@ function renderNav() {
   nav.innerHTML = '';
   const cur = location.hash.replace('#/', '').split('/')[0] || 'dashboard';
   const groups = [
-    ['Overview', ['dashboard', 'tracker', 'credit']],
+    ['Overview', ['dashboard', 'tracker', 'shopping', 'credit']],
     ['Growth', ['investments', 'marketing', 'budget']],
     ['Planning', ['bills', 'calendar', 'goals', 'loans']],
     ['Intelligence', ['reports', 'analytics']],
@@ -60,6 +61,7 @@ function renderNav() {
     bills: state.bills.filter(b => b.status !== 'paid' && b.dueDate <= today()).length,
     notifications: store.unreadCount(),
     credit: store.creditTotals().overdueCount,
+    shopping: store.shoppingPending(),
   };
   for (const [gname, paths] of groups) {
     nav.append(h('div', { class: 'nav-group', text: gname }));

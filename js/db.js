@@ -14,7 +14,7 @@ export const DB_NAME = 'cashchecker';
  * fires onupgradeneeded, so stores added to SCHEMA after the fact simply do
  * not exist on disk and the first read throws NotFoundError. See openOnce().
  */
-export const DB_VERSION = 3;
+export const DB_VERSION = 4;
 
 /**
  * store → { key, indexes: [[name, keyPath, opts]] }
@@ -40,6 +40,8 @@ export const SCHEMA = {
   budgets:       { indexes: [] },
   goals:         { indexes: [] },
   bills:         { indexes: [['dueDate', 'dueDate']] },
+  shoppingLists: { indexes: [] },
+  shoppingItems: { indexes: [['listId', 'listId']] },
   loans:         { indexes: [] },
   loanPayments:  { indexes: [['loanId', 'loanId']] },
   recurring:     { indexes: [] },
