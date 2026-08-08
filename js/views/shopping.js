@@ -28,8 +28,9 @@ import { dataTable, prompt } from '../ui.js';
 
 /** Units people actually shop in. Free text invited kg / Kg / KG and made the
     catalogue unmatchable, so this is a fixed list. Blank is allowed. */
-export const UNITS = ['pcs', 'kg', 'g', 'l', 'ml', 'pack', 'packet', 'box', 'bag',
-  'bottle', 'can', 'tin', 'dozen', 'bunch', 'block', 'tray', 'lb', 'oz'];
+export const UNITS = ['nos', 'pcs', 'unit', 'kg', 'g', 'l', 'ml', 'm', 'cm',
+  'dozen', 'pack', 'packet', 'box', 'bag', 'bottle', 'can', 'tin', 'bunch', 'block', 'tray',
+  'lb', 'oz'];
 
 /** How people actually type units, mapped onto UNITS above. "500g", "1 Kg",
     "2 ltr", "3 pkt" all have to land on the same value or the catalogue splits
@@ -39,7 +40,10 @@ const UNIT_ALIASES = {
   g: 'g', gm: 'g', gms: 'g', gr: 'g', gram: 'g', grams: 'g',
   l: 'l', lt: 'l', ltr: 'l', ltrs: 'l', litre: 'l', litres: 'l', liter: 'l', liters: 'l',
   ml: 'ml', mls: 'ml',
-  pc: 'pcs', pcs: 'pcs', piece: 'pcs', pieces: 'pcs', nos: 'pcs', unit: 'pcs', units: 'pcs',
+  pc: 'pcs', pcs: 'pcs', piece: 'pcs', pieces: 'pcs',
+  no: 'nos', nos: 'nos', number: 'nos', numbers: 'nos',
+  unit: 'unit', units: 'unit',
+  m: 'm', mtr: 'm', metre: 'm', meter: 'm', metres: 'm', meters: 'm', cm: 'cm',
   pack: 'pack', packs: 'pack', pkt: 'packet', pkts: 'packet', packet: 'packet', packets: 'packet',
   box: 'box', boxes: 'box', bag: 'bag', bags: 'bag',
   bottle: 'bottle', bottles: 'bottle', btl: 'bottle',
@@ -99,6 +103,18 @@ export function parseItem(raw) {
   const name = s.replace(/^[-–,.\s]+|[-–,.\s]+$/g, '');
   return { name: name.charAt(0).toUpperCase() + name.slice(1), qty, unit, price };
 }
+
+/**
+ * Drops the "1." / "2)" / "-" / "•" people type when they write out a list.
+ *
+ * The number must be followed by a space, otherwise "1.5kg rice" would lose its
+ * "1." and become 5kg of rice — a silent, expensive kind of wrong.
+ */
+export const stripBullet = line => String(line).replace(/^\s*(?:\d{1,3}[.)\]:-]\s+|[-–—*•·]\s+)/, '').trim();
+
+/** Splits a pasted block into parsed items, ignoring blank and junk lines. */
+export const parseLines = text => String(text || '')
+  .split(/\r?\n/).map(stripBullet).filter(Boolean).map(parseItem).filter(x => x.name);
 
 const itemsOf = listId => state.shoppingItems.filter(i => i.listId === listId);
 const lineTotal = i => Number(i.price) || 0;
@@ -212,13 +228,14 @@ function openList(l0, redraw) {
     m.body.innerHTML = '';
     m.body.append(quickAdd(l, drawBody));
     m.body.append(h('div', { class: 'row wrap', style: { gap: '6px', marginTop: '8px' } },
+      h('button', { class: 'btn sm', html: `${icon('plus', 14)} Add several`, onClick: () => pasteIntoList(l, drawBody) }),
       h('button', { class: 'btn sm', html: `${icon('tag', 14)} Add from products`, onClick: () => pickProducts(l, drawBody) }),
       l.status === 'done' ? null : h('button', { class: 'btn sm', html: `${icon('cart', 14)} Shop mode`,
         onClick: () => { m.close(); shopMode(l, redraw); } })));
 
     if (!its.length) {
       m.body.append(h('div', { class: 'mt' }, empty('Empty list',
-        'Type a line like “rice 1kg” above, or pick from your saved products.', 'cart')));
+        'Type a line like “rice 1kg” above, paste a whole list, or pick from your saved products.', 'cart')));
     } else {
       const rows = h('div', { class: 'mt' });
       its.forEach(i => rows.append(itemRow(i, l, drawBody)));
@@ -411,6 +428,176 @@ function ensureDestination(l) {
   });
 }
 
+/* ═══════════ BULK ENTRY ═══════════
+   One row per thing, name / quantity / unit side by side — a list is written
+   down as a list, not as one field at a time.
+
+   The name box still understands a whole line, so "rice 1kg" typed there splits
+   itself across the three boxes on blur. Pasting several lines at once fills a
+   row each, which is the fastest way in when the list already exists somewhere. */
+const unitSelect = (value = '') => h('select', { class: 'inp', style: { width: '100%' } },
+  h('option', { value: '' }, 'Unit'),
+  ...UNITS.map(u => h('option', { value: u, selected: u === value }, u)));
+
+function bulkRows({ title, subtitle, submitText, startRows = 5, onRows }) {
+  const m = modal({ title, subtitle, size: 'wide' });
+  const rows = [];
+  const grid = 'minmax(0, 1fr) 74px 104px 30px';
+  const list = h('div', {});
+
+  const count = () => rows.filter(r => r.name.value.trim()).length;
+  const tally = h('div', { class: 'tiny t3', style: { marginTop: '8px' } });
+  const retally = () => {
+    const n = count();
+    tally.textContent = n
+      ? `${n} row${n === 1 ? '' : 's'} filled in — empty rows are ignored.`
+      : 'Type a name in a row. "rice 1kg" in the name box splits itself into 1 and kg.';
+  };
+
+  function makeRow(values = {}) {
+    const name = h('input', { class: 'inp', type: 'text', placeholder: 'Product name', value: values.name || '' });
+    const qty = h('input', { class: 'inp num', type: 'number', min: '0', step: 'any', placeholder: 'Qty',
+      value: values.qty ?? '' });
+    const unit = unitSelect(values.unit || '');
+    const row = { name, qty, unit };
+
+    // "rice 1kg" typed into the name box lands as Rice / 1 / kg the moment focus
+    // leaves it. Whatever is already in the qty and unit boxes wins.
+    const split = () => {
+      const raw = name.value;
+      if (!raw.trim()) return;
+      const it = parseItem(raw);
+      if (!it.name) return;
+      name.value = it.name;
+      if (!qty.value && it.qty) qty.value = it.qty;
+      if (!unit.value && it.unit) unit.value = it.unit;
+      if (!unit.value) { const known = productNamed(it.name); if (known?.unit) unit.value = known.unit; }
+      retally();
+    };
+
+    name.addEventListener('blur', split);
+    name.addEventListener('input', retally);
+    name.addEventListener('keydown', e => {
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      split();
+      const next = rows[rows.indexOf(row) + 1] || addRow();
+      next.name.focus();
+    });
+    // A multi-line paste fills a row each instead of collapsing into one name.
+    name.addEventListener('paste', e => {
+      const text = (e.clipboardData || window.clipboardData)?.getData('text') || '';
+      if (!/\r?\n/.test(text)) return;
+      e.preventDefault();
+      const parsed = parseLines(text);
+      if (!parsed.length) return;
+      fill(parsed, row);
+    });
+
+    row.el = h('div', { style: { display: 'grid', gridTemplateColumns: grid, gap: '6px', marginBottom: '6px', alignItems: 'center' } },
+      name, qty, unit,
+      h('button', { class: 'btn xs danger', html: icon('x', 13), title: 'Remove row',
+        onClick: () => {
+          if (rows.length > 1) { row.el.remove(); rows.splice(rows.indexOf(row), 1); }
+          else { name.value = ''; qty.value = ''; unit.value = ''; }
+          retally();
+        } }));
+    return row;
+  }
+
+  function addRow(values) {
+    const row = makeRow(values);
+    rows.push(row); list.append(row.el);
+    return row;
+  }
+
+  /** Drops parsed lines into the first empty rows, adding more as needed. */
+  function fill(parsed, startAt) {
+    let idx = startAt ? rows.indexOf(startAt) : 0;
+    for (const it of parsed) {
+      let row = rows[idx];
+      while (row && row !== startAt && row.name.value.trim()) row = rows[++idx];
+      if (!row) row = addRow();
+      row.name.value = it.name;
+      if (it.qty) row.qty.value = it.qty;
+      if (it.unit) row.unit.value = it.unit;
+      idx++;
+    }
+    retally();
+  }
+
+  m.body.append(
+    h('div', { style: { display: 'grid', gridTemplateColumns: grid, gap: '6px', marginBottom: '6px' } },
+      h('div', { class: 'tiny t3', text: 'Product' }),
+      h('div', { class: 'tiny t3', text: 'Qty' }),
+      h('div', { class: 'tiny t3', text: 'Unit' }),
+      h('div', {})),
+    list,
+    h('button', { class: 'btn sm', html: `${icon('plus', 14)} Add row`, onClick: () => addRow().name.focus() }),
+    tally);
+
+  for (let i = 0; i < startRows; i++) addRow();
+  retally();
+
+  m.setFooter(frag(h('div', { class: 'spacer' }),
+    h('button', { class: 'btn', text: 'Cancel', onClick: () => m.close() }),
+    h('button', { class: 'btn primary', text: submitText, onClick: async () => {
+      const out = rows
+        .map(r => ({ name: parseItem(r.name.value).name || r.name.value.trim(),
+          qty: Number(r.qty.value) || parseItem(r.name.value).qty || null,
+          unit: r.unit.value || parseItem(r.name.value).unit || '' }))
+        .filter(r => r.name);
+      if (!out.length) { toast('Nothing filled in yet', 'warn'); return; }
+      await onRows(out);
+      m.close();
+    } })));
+
+  setTimeout(() => rows[0]?.name.focus(), 80);
+}
+
+/** Many products at once. Saves are silent and one change event fires at the
+    end, so thirty rows redraw the page once instead of thirty times. */
+function addProducts(redraw) {
+  bulkRows({
+    title: 'Add products',
+    subtitle: 'One product per row — name, how much, and the unit',
+    submitText: 'Add products',
+    onRows: async out => {
+      let added = 0, skipped = 0;
+      for (const r of out) {
+        if (productNamed(r.name)) { skipped++; continue; }   // already in the catalogue
+        await store.save('products', { name: r.name, qty: r.qty, unit: r.unit, price: 0 },
+          { silent: true, auditIt: false });
+        added++;
+      }
+      store.bus.emit('change', { store: 'products', action: 'bulk' });
+      toast(`${added} added${skipped ? ` · ${skipped} already there` : ''}`, added ? 'ok' : 'warn');
+      redraw();
+    },
+  });
+}
+
+/** The whole shopping list in one go. */
+function pasteIntoList(l, after) {
+  bulkRows({
+    title: 'Add several items',
+    subtitle: `Onto “${l.name}” — one thing per row`,
+    submitText: 'Add to list',
+    onRows: async out => {
+      for (const r of out) {
+        const known = productNamed(r.name);
+        await store.save('shoppingItems', {
+          listId: l.id, name: r.name, qty: r.qty ?? known?.qty ?? null,
+          unit: r.unit || known?.unit || '', price: 0, bought: false,
+        }, { silent: true, auditIt: false });
+      }
+      store.bus.emit('change', { store: 'shoppingItems', action: 'bulk' });
+      toast(`${out.length} item${out.length === 1 ? '' : 's'} added`, 'ok');
+      after();
+    },
+  });
+}
+
 /* ---------- editors ---------- */
 function editItem(i, l, after) {
   const { modal: m } = formModal({
@@ -595,7 +782,7 @@ function productsPanel(redraw) {
   wrap.append(h('div', { class: 'row between wrap mb', style: { gap: '8px' } },
     h('div', { style: { minWidth: 0 } }, h('b', { text: 'Product catalogue' }),
       h('div', { class: 'tiny t3', text: 'What you buy and how much of it. Pick from here instead of retyping every time.' })),
-    h('button', { class: 'btn primary sm', html: `${icon('plus', 15)} New product`, onClick: () => editProduct(null, redraw) })));
+    h('button', { class: 'btn primary sm', html: `${icon('plus', 15)} Add products`, onClick: () => addProducts(redraw) })));
 
   wrap.append(dataTable([
     { key: 'name', label: 'Product', render: r => h('div', {}, h('b', { text: r.name }),
