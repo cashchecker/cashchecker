@@ -1,0 +1,47 @@
+# ============ Cloudflare Pages configuration ============
+# The app is served from  https://cashchecker.pages.dev
+#
+# Deploy with:
+#   node build-pages.mjs
+#   npx wrangler pages deploy
+# or just double-click "Deploy to Cloudflare.cmd".
+#
+# build-pages.mjs assembles dist/ from the public files plus _worker.js
+# (a copy of worker/index.js), which serves /api/* and falls through to the
+# static assets. Nothing else in this folder is ever published.
+
+name = "cashchecker"
+pages_build_output_dir = "dist"
+compatibility_date = "2025-10-01"
+
+[vars]
+APP_NAME = "Cash Checker"
+
+# Who may sign in. Empty = OPEN — anyone can create an account, up to
+# MAX_ACCOUNTS below. To run this privately instead, list the addresses:
+#   ALLOWED_EMAILS = "you@example.com,partner@example.com"
+# A non-empty list overrides MAX_ACCOUNTS entirely.
+ALLOWED_EMAILS = ""
+
+# Ceiling on new sign-ups while ALLOWED_EMAILS is empty. 0 = no limit, which is
+# what this deployment runs. The real ceiling is then Cloudflare D1's storage
+# and daily-write quota, not this number. Set it to e.g. "500" to cap sign-ups
+# if the database ever starts filling faster than expected.
+MAX_ACCOUNTS = "0"
+
+# Must match the sender address verified in Brevo.
+MAIL_FROM = "Cash Checker <shayaanadhur@gmail.com>"
+
+# Your data. Unchanged by the move - the same database is reused.
+[[d1_databases]]
+binding = "DB"
+database_name = "cashchecker"
+database_id = "8af725bd-2e76-41fb-8cf9-331561e19898"
+
+# ---------------------------------------------------------------------------
+# BREVO_API_KEY is a SECRET and never belongs in this file. Set it with:
+#   npx wrangler pages secret put BREVO_API_KEY --project-name cashchecker
+# or run "Set Brevo Key.cmd".
+# Without it, login codes are written to the log instead:
+#   npx wrangler pages deployment tail --project-name cashchecker
+# ---------------------------------------------------------------------------

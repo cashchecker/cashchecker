@@ -1,0 +1,27 @@
+{
+  "name": "Cash Checker — Financial Operating System",
+  "short_name": "Cash Checker",
+  "description": "Local-first personal and business finance: tracker, credit book, investments, marketing budgets, forecasting and reports. Works fully offline.",
+  "id": "/cash-checker/",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone", "minimal-ui"],
+  "orientation": "any",
+  "background_color": "#080a14",
+  "theme_color": "#080a14",
+  "lang": "en",
+  "dir": "ltr",
+  "categories": ["finance", "business", "productivity", "utilities"],
+  "icons": [
+    { "src": "assets/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "assets/icon-maskable.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Add transaction", "short_name": "Add", "url": "./index.html#/tracker", "description": "Record income or an expense" },
+    { "name": "Dashboard", "short_name": "Dashboard", "url": "./index.html#/dashboard" },
+    { "name": "Credit Book", "short_name": "Credit", "url": "./index.html#/credit" },
+    { "name": "Bills due", "short_name": "Bills", "url": "./index.html#/bills" }
+  ],
+  "prefer_related_applications": false
+}
